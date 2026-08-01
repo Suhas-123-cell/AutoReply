@@ -52,12 +52,21 @@ export async function issueMobileAuthCode(
     }),
   ]);
 
-  const { sendEmail } = await import("@/lib/email/send");
-  await sendEmail({
-    to: normalizedEmail,
-    subject: `${code} is your OpenReply sign-in code`,
-    html: `<p>Your OpenReply sign-in code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
-  });
+  // The code is already valid and stored above — an email delivery failure
+  // (a real Resend outage, or no RESEND_API_KEY configured in local dev)
+  // must not prevent it from being returned to the caller, since the
+  // MOBILE_OTP_DEV_ECHO path depends on getting `code` back even when the
+  // send itself fails. Logged, not swallowed.
+  try {
+    const { sendEmail } = await import("@/lib/email/send");
+    await sendEmail({
+      to: normalizedEmail,
+      subject: `${code} is your OpenReply sign-in code`,
+      html: `<p>Your OpenReply sign-in code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p><p>This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
+    });
+  } catch (error) {
+    console.error("[Mobile OTP] Failed to send code email:", error);
+  }
 
   return { code };
 }
