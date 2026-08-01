@@ -84,12 +84,22 @@ describe("checkRateLimit", () => {
 });
 
 describe("reserveDMSlot", () => {
+  // reserveDMSlot now checks a short-window burst cap (eval call #1) before
+  // the hourly cap (eval call #2) — see lib/utils/rate-limiter.ts. Every
+  // test below mocks the burst check as passing first, so it's actually
+  // exercising the hourly-cap behavior it names, not silently short-circuiting
+  // on the burst check instead.
+  const BURST_ALLOWED: [number, number, number] = [1, 1, 1];
+
   it("should atomically reserve a slot when below the hourly cap", async () => {
-    mockEval.mockResolvedValue([1, 51, 139]);
+    mockEval
+      .mockResolvedValueOnce(BURST_ALLOWED)
+      .mockResolvedValueOnce([1, 51, 139]);
 
     const result = await reserveDMSlot("account_123");
 
-    expect(mockEval).toHaveBeenCalledWith(
+    expect(mockEval).toHaveBeenNthCalledWith(
+      2,
       expect.any(String),
       1,
       "rate:dm:account_123",
@@ -103,7 +113,9 @@ describe("reserveDMSlot", () => {
   });
 
   it("should recommend requeue when the atomic reserve is denied", async () => {
-    mockEval.mockResolvedValue([0, RATE_LIMIT_MAX, 0]);
+    mockEval
+      .mockResolvedValueOnce(BURST_ALLOWED)
+      .mockResolvedValueOnce([0, RATE_LIMIT_MAX, 0]);
 
     const result = await reserveDMSlot("account_123", 0);
 
@@ -114,7 +126,9 @@ describe("reserveDMSlot", () => {
   });
 
   it("should skip after max requeue attempts", async () => {
-    mockEval.mockResolvedValue(["0", String(RATE_LIMIT_MAX), "0"]);
+    mockEval
+      .mockResolvedValueOnce(BURST_ALLOWED)
+      .mockResolvedValueOnce(["0", String(RATE_LIMIT_MAX), "0"]);
 
     const result = await reserveDMSlot("account_123", 3);
 
@@ -122,11 +136,26 @@ describe("reserveDMSlot", () => {
     expect(result.shouldRequeue).toBe(false);
     expect(result.shouldSkip).toBe(true);
   });
+
+  it("requeues quickly, without touching the hourly slot, when only the burst cap is hit", async () => {
+    mockEval.mockResolvedValueOnce([0, 2, 0]);
+
+    const result = await reserveDMSlot("account_123", 0);
+
+    expect(mockEval).toHaveBeenCalledTimes(1);
+    expect(result.allowed).toBe(false);
+    expect(result.reserved).toBe(false);
+    expect(result.shouldRequeue).toBe(true);
+    expect(result.shouldSkip).toBe(false);
+    expect(result.requeueDelayMs).toBeLessThan(3600 * 1000);
+  });
 });
 
 describe("incrementDMCounter", () => {
   it("should use the atomic reservation path", async () => {
-    mockEval.mockResolvedValue([1, 51, 139]);
+    mockEval
+      .mockResolvedValueOnce([1, 1, 1])
+      .mockResolvedValueOnce([1, 51, 139]);
 
     const count = await incrementDMCounter("account_123");
 
