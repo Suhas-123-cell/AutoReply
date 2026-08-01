@@ -56,6 +56,23 @@ export default function PrivacyPage() {
       </section>
 
       <section>
+        <h2 className="text-xl font-bold text-white">Mobile App</h2>
+        <p className="mt-3">
+          The OpenReply mobile app uses the same account and workspace data
+          described above, reached through a device-issued sign-in code
+          instead of a browser session. If you enable push notifications, we
+          store your device&apos;s push token to deliver alerts for new leads,
+          failed sends, and account issues; you can disable this anytime in
+          the app&apos;s notification settings. If you enable the optional
+          biometric app lock, biometric data (Face ID, Touch ID, fingerprint)
+          never leaves your device — the app only receives a pass/fail result
+          from your device&apos;s operating system and never has access to the
+          underlying biometric data itself. You can delete your account
+          directly from the mobile app&apos;s Settings screen.
+        </p>
+      </section>
+
+      <section>
         <h2 className="text-xl font-bold text-white">Retention And Deletion</h2>
         <p className="mt-3">
           Customers can disconnect Instagram from settings, which removes the
