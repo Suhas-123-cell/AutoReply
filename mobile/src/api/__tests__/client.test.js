@@ -17,6 +17,7 @@ beforeEach(() => {
   // state like inMemoryToken) via the CJS registry Babel transforms this
   // file's ESM syntax into; dynamic import() bypasses that registry under
   // Jest's default (non --experimental-vm-modules) setup.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate, see comment above
   const client = require("../client");
   apiFetch = client.apiFetch;
   ApiError = client.ApiError;
