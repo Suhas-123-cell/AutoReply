@@ -1,4 +1,5 @@
 /** @type {import('tailwindcss').Config} */
+/* eslint-disable @typescript-eslint/no-require-imports -- Tailwind loads this file via Node's CommonJS require(), not ESM */
 module.exports = {
   content: ["./app/**/*.{js,jsx}", "./src/**/*.{js,jsx}"],
   presets: [require("nativewind/preset")],
