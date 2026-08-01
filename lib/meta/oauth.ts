@@ -17,6 +17,12 @@ const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 interface OAuthStatePayload {
   workspaceId: string;
   ts: number;
+  // Present only for mobile-initiated connects (see
+  // app/api/mobile/instagram/connect/route.ts). The mobile OAuth session has
+  // no session cookie inside ASWebAuthenticationSession, so identity has to
+  // travel in the signed state instead of coming from auth().
+  userId?: string;
+  client?: "mobile";
 }
 
 function base64UrlEncode(value: string): string {
@@ -33,9 +39,16 @@ function signState(payload: string): string {
     .digest("base64url");
 }
 
-export function createOAuthState(workspaceId: string): string {
+export function createOAuthState(
+  workspaceId: string,
+  mobile?: { userId: string }
+): string {
   const payload = base64UrlEncode(
-    JSON.stringify({ workspaceId, ts: Date.now() } satisfies OAuthStatePayload)
+    JSON.stringify({
+      workspaceId,
+      ts: Date.now(),
+      ...(mobile ? { userId: mobile.userId, client: "mobile" as const } : {}),
+    } satisfies OAuthStatePayload)
   );
   return `${payload}.${signState(payload)}`;
 }
