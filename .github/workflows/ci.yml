@@ -26,7 +26,14 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          set +e
+          npm ci --loglevel verbose 2>&1 | tee /tmp/npm-ci.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error title=npm ci failed::$(tail -c 3000 /tmp/npm-ci.log | tr '\n' ' ')"
+          fi
+          exit "$code"
 
       - name: Generate Prisma client
         run: npm run db:generate
