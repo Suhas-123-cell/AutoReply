@@ -3,6 +3,7 @@ import Resend from "next-auth/providers/resend";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser, getPrimaryWorkspace } from "@/lib/workspace";
+import { getBearerSessionUserId } from "@/lib/auth/bearer";
 
 type AdapterPrismaClient = Parameters<typeof PrismaAdapter>[0];
 
@@ -43,6 +44,14 @@ export const authConfig = {
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
 export async function getCurrentUserId(): Promise<string | null> {
+  // Mobile clients authenticate with a Bearer session token instead of a
+  // cookie (see lib/auth/bearer.ts). A web request never sends this header,
+  // so getBearerSessionUserId() returns null immediately with zero I/O and
+  // this falls through to the original cookie-based auth() check below —
+  // byte-identical behavior for the web app.
+  const bearerUserId = await getBearerSessionUserId();
+  if (bearerUserId) return bearerUserId;
+
   const session = await auth();
   return session?.user?.id ?? null;
 }
