@@ -294,7 +294,7 @@ describe("DM Worker — Full Pipeline", () => {
       true
     );
     expect(mockReserveWorkspaceDMSend).toHaveBeenCalledWith("workspace_123");
-    expect(mockReserveDMSlot).toHaveBeenCalledWith("ig_456", 0);
+    expect(mockReserveDMSlot).toHaveBeenCalledWith("ig_456", 0, 0);
     expect(mockDecryptToken).toHaveBeenCalledWith("encrypted_token_abc");
     expect(mockSendPrivateReply).toHaveBeenCalledWith(
       "decrypted_token",
@@ -392,10 +392,43 @@ describe("DM Worker — Full Pipeline", () => {
       expect.objectContaining({
         commentId: "comment_555",
         requeueAttempt: 1,
+        burstRequeueAttempt: 0,
       }),
       expect.objectContaining({
         delay: 1800000,
-        jobId: "comment_ig_456_comment_555_retry_1",
+        jobId: "comment_ig_456_comment_555_retry_1_0",
+      })
+    );
+  });
+
+  it("should bump burstRequeueAttempt, not requeueAttempt, when blocked by the burst cap", async () => {
+    // Regression test: burst and hourly requeues used to share one counter,
+    // so a job could exhaust MAX_REQUEUE_ATTEMPTS from burst-blocking alone
+    // (which clears in ~1.5s) and get permanently skipped as "hourly limit
+    // reached" while nowhere near the actual hourly cap.
+    mockReserveDMSlot.mockResolvedValue({
+      allowed: false,
+      currentCount: 2,
+      remainingDMs: 0,
+      shouldRequeue: true,
+      requeueDelayMs: 1500,
+      shouldSkip: false,
+      reserved: false,
+      blockedBy: "burst",
+    });
+
+    const processor = getProcessor();
+    await processor(createMockJob());
+
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "process-comment",
+      expect.objectContaining({
+        requeueAttempt: 0,
+        burstRequeueAttempt: 1,
+      }),
+      expect.objectContaining({
+        delay: 1500,
+        jobId: "comment_ig_456_comment_555_retry_0_1",
       })
     );
   });

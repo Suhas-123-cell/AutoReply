@@ -21,6 +21,25 @@ const RATE_LIMIT_WINDOW = 3600; // 1 hour in seconds
 const REQUEUE_DELAY_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_REQUEUE_ATTEMPTS = 3;
 
+// Meta also documents a short-window burst cap on messaging endpoints
+// (2 calls/sec per Instagram professional account), separate from and much
+// tighter than the 750/hour cap above. A worker draining a large backlog
+// could clear the hourly cap's math while still bursting past this, so it's
+// checked first, before the hourly reservation is touched.
+const BURST_LIMIT_MAX = 2;
+const BURST_LIMIT_WINDOW = 1; // 1 second
+const BURST_REQUEUE_DELAY_MS = 1500;
+// Burst blocks are cheap and self-clearing (a 1-second window), unlike an
+// hourly-cap block. Sharing MAX_REQUEUE_ATTEMPTS between the two meant a
+// job could burn all 3 hourly-reserved retries on burst-blocking alone in
+// ~4.5s during exactly the traffic-spike scenario the burst cap exists to
+// smooth over, and get permanently skipped as "hourly rate limit reached"
+// while the account's actual hourly quota was nowhere near exhausted. Give
+// burst its own, much larger budget — at 1.5s each, even 40 attempts is
+// only ~60s of added latency for a message that will almost certainly send
+// well before then.
+const MAX_BURST_REQUEUE_ATTEMPTS = 40;
+
 let redis: Redis | null = null;
 
 function getRedis(): Redis {
@@ -40,6 +59,10 @@ export interface RateLimitResult {
   requeueDelayMs: number;
   shouldSkip: boolean;
   reserved: boolean;
+  // Which cap produced a requeue/skip, so the caller can bump the matching
+  // counter (burstRequeueAttempt vs. requeueAttempt) rather than a shared
+  // one. Absent when allowed === true.
+  blockedBy?: "burst" | "hourly";
 }
 
 const RESERVE_DM_SLOT_SCRIPT = `
@@ -78,6 +101,7 @@ function blockedResult(
       requeueDelayMs: 0,
       shouldSkip: true,
       reserved: false,
+      blockedBy: "hourly",
     };
   }
 
@@ -89,6 +113,7 @@ function blockedResult(
     requeueDelayMs: REQUEUE_DELAY_MS,
     shouldSkip: false,
     reserved: false,
+    blockedBy: "hourly",
   };
 }
 
@@ -156,9 +181,51 @@ export async function checkRateLimit(
  */
 export async function reserveDMSlot(
   instagramAccountId: string,
-  requeueAttempt: number = 0
+  requeueAttempt: number = 0,
+  burstRequeueAttempt: number = 0
 ): Promise<RateLimitResult> {
   const client = getRedis();
+
+  // Burst check first and separately: it must never consume the hourly
+  // reservation below, since a burst-throttled send hasn't actually used up
+  // any of the account's hourly allowance. It also tracks its own requeue
+  // budget (burstRequeueAttempt), independent of the hourly one — see
+  // MAX_BURST_REQUEUE_ATTEMPTS' comment for why they can't share a counter.
+  const burstKey = `rate:dm:burst:${instagramAccountId}`;
+  const burstResult = await client.eval(
+    RESERVE_DM_SLOT_SCRIPT,
+    1,
+    burstKey,
+    BURST_LIMIT_MAX,
+    BURST_LIMIT_WINDOW
+  );
+  const burstValues = Array.isArray(burstResult) ? burstResult : [];
+  if (toScriptNumber(burstValues[0]) !== 1) {
+    const count = toScriptNumber(burstValues[1]);
+    if (burstRequeueAttempt >= MAX_BURST_REQUEUE_ATTEMPTS) {
+      return {
+        allowed: false,
+        currentCount: count,
+        remainingDMs: 0,
+        shouldRequeue: false,
+        requeueDelayMs: 0,
+        shouldSkip: true,
+        reserved: false,
+        blockedBy: "burst",
+      };
+    }
+    return {
+      allowed: false,
+      currentCount: count,
+      remainingDMs: 0,
+      shouldRequeue: true,
+      requeueDelayMs: BURST_REQUEUE_DELAY_MS,
+      shouldSkip: false,
+      reserved: false,
+      blockedBy: "burst",
+    };
+  }
+
   const key = `rate:dm:${instagramAccountId}`;
 
   const result = await client.eval(
