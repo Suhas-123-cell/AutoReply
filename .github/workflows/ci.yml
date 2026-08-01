@@ -18,7 +18,11 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # prisma's own engines.node requirement is
+          # "^20.19 || ^22.12 || >=24.0" — it explicitly rejects early 20.x
+          # releases, which is likely why installs were failing here.
+          # 22 is squarely inside Prisma's supported range and a stable LTS.
+          node-version: "22"
           cache: npm
 
       - name: Install dependencies
