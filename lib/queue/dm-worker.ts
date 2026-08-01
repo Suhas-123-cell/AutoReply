@@ -32,6 +32,7 @@ import {
   renderMessageWithTracking,
   renderMessageWithoutLink,
 } from "@/lib/tracking/message";
+import { enqueuePush } from "@/lib/push/notify";
 
 const BACKOFF_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000];
 
@@ -94,6 +95,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     mediaId,
   } = job.data;
   const requeueAttempt = job.data.requeueAttempt ?? 0;
+  const burstRequeueAttempt = job.data.burstRequeueAttempt ?? 0;
 
   const automations = await prisma.automation.findMany({
     where: {
@@ -313,7 +315,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
 
     let rateLimit;
     try {
-      rateLimit = await reserveDMSlot(instagramAccountId, requeueAttempt);
+      rateLimit = await reserveDMSlot(instagramAccountId, requeueAttempt, burstRequeueAttempt);
     } catch (error) {
       await releaseWorkspaceDMReservation(
         automation.workspaceId,
@@ -341,6 +343,8 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         usage.periodStart
       );
 
+      const isBurst = rateLimit.blockedBy === "burst";
+
       if (rateLimit.shouldSkip) {
         await prisma.dmLog.update({
           where: {
@@ -352,7 +356,9 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           data: {
             status: "SKIPPED_RATE_LIMIT",
             matchedKeyword: matchResult.matchedKeyword,
-            errorMessage: "Hourly Instagram DM rate limit reached",
+            errorMessage: isBurst
+              ? "Per-second Instagram DM rate limit reached"
+              : "Hourly Instagram DM rate limit reached",
           },
         });
         continue;
@@ -369,19 +375,32 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           data: {
             status: "PENDING",
             matchedKeyword: matchResult.matchedKeyword,
-            errorMessage: "Hourly rate limit hit; retry scheduled",
+            errorMessage: isBurst
+              ? "Per-second rate limit hit; retry scheduled"
+              : "Hourly rate limit hit; retry scheduled",
           },
         });
+
+        // Burst and hourly requeues bump separate counters (see
+        // MAX_BURST_REQUEUE_ATTEMPTS in lib/utils/rate-limiter.ts) so a
+        // burst-clearing retry storm can't burn through the hourly budget.
+        // Both are included in the jobId so repeated retries of either kind
+        // never collide on the same BullMQ job id.
+        const nextRequeueAttempt = isBurst ? requeueAttempt : requeueAttempt + 1;
+        const nextBurstRequeueAttempt = isBurst
+          ? burstRequeueAttempt + 1
+          : burstRequeueAttempt;
 
         await getDMQueue().add(
           "process-comment",
           {
             ...job.data,
-            requeueAttempt: requeueAttempt + 1,
+            requeueAttempt: nextRequeueAttempt,
+            burstRequeueAttempt: nextBurstRequeueAttempt,
           },
           {
             delay: rateLimit.requeueDelayMs,
-            jobId: `comment_${instagramAccountId}_${commentId}_retry_${requeueAttempt + 1}`,
+            jobId: `comment_${instagramAccountId}_${commentId}_retry_${nextRequeueAttempt}_${nextBurstRequeueAttempt}`,
           }
         );
         continue;
@@ -492,7 +511,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         );
       }
 
-      await prisma.dmLog.update({
+      const sentLog = await prisma.dmLog.update({
         where: {
           automationId_commentId: {
             automationId: automation.id,
@@ -505,13 +524,23 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           errorMessage: null,
         },
       });
+
+      await enqueuePush({
+        kind: "new_lead",
+        workspaceId: automation.workspaceId,
+        title: "New lead",
+        body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+        data: { deepLink: `/logs?highlight=${sentLog.id}` },
+      }).catch((pushError) =>
+        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+      );
     } catch (error) {
       await releaseWorkspaceDMReservation(
         automation.workspaceId,
         usage.periodStart
       );
 
-      await prisma.dmLog.update({
+      const failedLog = await prisma.dmLog.update({
         where: {
           automationId_commentId: {
             automationId: automation.id,
@@ -524,6 +553,17 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           errorMessage: formatError(error),
         },
       });
+
+      await enqueuePush({
+        kind: "send_failure",
+        workspaceId: automation.workspaceId,
+        title: "DM send failed",
+        body: `A DM failed to send for "${automation.name}"`,
+        data: { deepLink: `/logs?highlight=${failedLog.id}` },
+      }).catch((pushError) =>
+        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+      );
+
       throw error;
     }
   }
@@ -724,7 +764,7 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
         );
       }
     }
-    await prisma.dmLog.upsert({
+    const sentLog = await prisma.dmLog.upsert({
       where: {
         automationId_commentId: { automationId: automation.id, commentId: dedupeId },
       },
@@ -741,9 +781,19 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
       },
       update: { status: "SENT", dmSentAt: new Date(), errorMessage: null },
     });
+
+    await enqueuePush({
+      kind: "new_lead",
+      workspaceId: automation.workspaceId,
+      title: "New lead",
+      body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+      data: { deepLink: `/logs?highlight=${sentLog.id}` },
+    }).catch((pushError) =>
+      console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+    );
   } catch (error) {
     await releaseWorkspaceDMReservation(automation.workspaceId, usage.periodStart);
-    await prisma.dmLog.upsert({
+    const failedLog = await prisma.dmLog.upsert({
       where: {
         automationId_commentId: { automationId: automation.id, commentId: dedupeId },
       },
@@ -760,6 +810,17 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
       },
       update: { status: "FAILED", errorMessage: formatError(error) },
     });
+
+    await enqueuePush({
+      kind: "send_failure",
+      workspaceId: automation.workspaceId,
+      title: "DM send failed",
+      body: `A DM failed to send for "${automation.name}"`,
+      data: { deepLink: `/logs?highlight=${failedLog.id}` },
+    }).catch((pushError) =>
+      console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+    );
+
     throw error;
   }
 }
@@ -807,6 +868,17 @@ async function recordWorkerFailure(
       jobId: job?.id,
       instagramAccountId,
       commentId: commentId ?? undefined,
+    });
+
+    // OWNER-only: a worker crash is an operational concern, not a per-DM
+    // event, so it isn't gated by leadAlerts/failureAlerts. No PII in the
+    // payload — just enough to say "something needs attention".
+    await enqueuePush({
+      kind: "worker_failure",
+      workspaceId: account?.workspaceId ?? null,
+      targetRole: "OWNER",
+      title: "Worker error",
+      body: "The DM worker hit an error and needs attention.",
     });
   } catch (recordError) {
     console.error(
