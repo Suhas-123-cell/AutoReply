@@ -97,6 +97,23 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
   const requeueAttempt = job.data.requeueAttempt ?? 0;
   const burstRequeueAttempt = job.data.burstRequeueAttempt ?? 0;
 
+  // Meta only allows a private reply within 7 days of the comment. Checked
+  // up front, before even looking up matching automations, both to save the
+  // query and — more importantly — to avoid a doomed send attempt that would
+  // just come back as a Meta API error instead of a clear, specific skip.
+  // commentTimestamp is optional (older enqueued jobs, or any future caller
+  // that doesn't have it) — absent means "don't know, don't block."
+  if (job.data.commentTimestamp !== undefined) {
+    const ageMs = Date.now() - job.data.commentTimestamp * 1000;
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    if (ageMs > SEVEN_DAYS_MS) {
+      console.log(
+        `[DM Worker] Skipping comment ${commentId}: older than Instagram's 7-day private reply window`
+      );
+      return;
+    }
+  }
+
   const automations = await prisma.automation.findMany({
     where: {
       // Match campaigns bound to this specific post, plus any-post campaigns.

@@ -95,6 +95,7 @@ describe("parseCommentEvents", () => {
       commenterId: "user_789",
       commenterName: "testuser",
       mediaId: "media_101",
+      commentTimestamp: 1234567890,
     });
   });
 

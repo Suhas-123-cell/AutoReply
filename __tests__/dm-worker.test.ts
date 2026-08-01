@@ -121,6 +121,7 @@ vi.mock("bullmq", () => {
 });
 
 import { createDMWorker } from "../lib/queue/dm-worker";
+import type { ProcessCommentJob } from "../lib/queue/client";
 
 const usagePeriodStart = new Date("2026-05-01T00:00:00.000Z");
 
@@ -153,7 +154,7 @@ const mockAutomation = {
   trackedLinks: [],
 };
 
-const mockJobData = {
+const mockJobData: ProcessCommentJob = {
   instagramAccountId: "ig_456",
   commentId: "comment_555",
   commentText: "I want the LINK!",
@@ -312,6 +313,25 @@ describe("DM Worker — Full Pipeline", () => {
       },
       data: expect.objectContaining({ status: "SENT" }),
     });
+  });
+
+  it("should skip a comment older than Instagram's 7-day private reply window, before even querying automations", async () => {
+    const eightDaysAgoSeconds = Math.floor(Date.now() / 1000) - 8 * 24 * 60 * 60;
+    const processor = getProcessor();
+
+    await processor(createMockJob({ ...mockJobData, commentTimestamp: eightDaysAgoSeconds }));
+
+    expect(mockPrisma.automation.findMany).not.toHaveBeenCalled();
+    expect(mockSendPrivateReply).not.toHaveBeenCalled();
+  });
+
+  it("should still process a comment within the 7-day window", async () => {
+    const oneDayAgoSeconds = Math.floor(Date.now() / 1000) - 1 * 24 * 60 * 60;
+    const processor = getProcessor();
+
+    await processor(createMockJob({ ...mockJobData, commentTimestamp: oneDayAgoSeconds }));
+
+    expect(mockPrisma.automation.findMany).toHaveBeenCalled();
   });
 
   it("should skip when no automations match the media", async () => {

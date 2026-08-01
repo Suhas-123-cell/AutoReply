@@ -39,6 +39,11 @@ export interface WebhookCommentEvent {
   commenterId: string;
   commenterName?: string;
   mediaId: string;
+  // Unix seconds, from the webhook entry's own `time` field. Meta only
+  // allows a private reply within 7 days of the comment; this lets the
+  // worker check that before attempting a send instead of finding out from
+  // a rejected API call.
+  commentTimestamp: number;
 }
 
 interface WebhookEntry {
@@ -120,6 +125,7 @@ export function parseCommentEvents(payload: WebhookPayload): WebhookCommentEvent
         commenterId,
         commenterName: value.from?.username,
         mediaId,
+        commentTimestamp: entry.time,
       });
     }
   }
