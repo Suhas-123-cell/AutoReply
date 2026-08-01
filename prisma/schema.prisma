@@ -23,6 +23,7 @@ model User {
   ownedWorkspaces   Workspace[]       @relation("WorkspaceOwner")
   workspaceMembers  WorkspaceMember[]
   sentInvitations   WorkspaceInvitation[] @relation("WorkspaceInvitationsSent")
+  pushDevices       PushDevice[]
 }
 
 model Account {
@@ -378,4 +379,56 @@ enum OperationalEventLevel {
   INFO
   WARNING
   ERROR
+}
+
+// --- Mobile app support ---
+// Additive only: no columns were changed on any pre-existing model.
+
+// Email OTP codes for the mobile app's sign-in flow. Deliberately NOT the
+// Auth.js `VerificationToken` table: that table is validated by an
+// unthrottled Auth.js callback route, so storing a 6-digit code there would
+// make it brute-forceable in ~1e6 requests against a *web* login endpoint.
+model MobileAuthCode {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  requestIp  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+}
+
+// Mobile-specific metadata for a Session row created by the mobile OTP flow.
+// Linked to Session.id by convention (not a Prisma relation) so the
+// Auth.js-owned Session model is never touched by this feature.
+model MobileSessionMeta {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
+  deviceName   String?
+  platform     String
+  appVersion   String?
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model PushDevice {
+  id            String    @id @default(cuid())
+  userId        String
+  expoPushToken String    @unique
+  platform      String
+  appVersion    String?
+  deviceName    String?
+  leadAlerts    Boolean   @default(true)
+  failureAlerts Boolean   @default(true)
+  disabledAt    DateTime?
+  lastSeenAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
