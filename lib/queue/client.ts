@@ -30,6 +30,7 @@ export interface ProcessCommentJob {
   commenterName?: string;
   mediaId: string;
   requeueAttempt?: number;
+  burstRequeueAttempt?: number;
   // Which path enqueued this comment. Recorded in the shared ProcessedComment
   // dedup store so the reconciler can tell webhook- from polling-caught comments.
   source?: CommentSource;
@@ -71,4 +72,60 @@ export function getDMQueue(): Queue<DmQueueJob> {
     });
   }
   return dmQueue;
+}
+
+// ─── Push Notification Queue ───────────────────────────────────────────────
+
+export type PushKind =
+  | "new_lead"
+  | "send_failure"
+  | "worker_failure"
+  | "token_expiring";
+
+interface BasePushJob {
+  kind: PushKind;
+  // null for a worker_failure whose Instagram account couldn't be traced back
+  // to a workspace — the job resolves to zero targets and is a no-op.
+  workspaceId: string | null;
+  // Restricts targeting to a single WorkspaceMember role (e.g. "OWNER" for
+  // worker_failure). Omitted means "every member with the relevant
+  // preference enabled".
+  targetRole?: "OWNER";
+}
+
+// A single push, sent as-is (the first few events in a 10-minute bucket).
+export interface IndividualPushJob extends BasePushJob {
+  mode: "individual";
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+// A collapsed notification for a bucket that crossed the digest threshold.
+// Carries no canned copy — the worker re-reads the live Redis counter for
+// this bucket at fire time and builds the message from the current count.
+export interface DigestPushJob extends BasePushJob {
+  mode: "digest";
+  bucketId: string;
+}
+
+export type PushQueueJob = IndividualPushJob | DigestPushJob;
+
+let pushQueue: Queue<PushQueueJob> | null = null;
+
+export function getPushQueue(): Queue<PushQueueJob> {
+  if (!pushQueue) {
+    pushQueue = new Queue<PushQueueJob>("push-notifications", {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        // Small, ephemeral payloads on a shared 30MB Redis budget — keep
+        // very little history compared to the DM queue.
+        removeOnComplete: { count: 200 },
+        removeOnFail: { age: 300, count: 200 },
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5000 },
+      },
+    });
+  }
+  return pushQueue;
 }
