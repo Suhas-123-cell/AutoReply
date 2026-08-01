@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockPrisma } = vi.hoisted(() => ({
+const { mockPrisma, mockRedis } = vi.hoisted(() => ({
   mockPrisma: {
     trackedLink: {
       findUnique: vi.fn(),
@@ -9,10 +9,22 @@ const { mockPrisma } = vi.hoisted(() => ({
       create: vi.fn(),
     },
   },
+  // allowLinkClick() (lib/tracking/server.ts) calls getRedisConnection() —
+  // without this mock it attempts a real network connection and the test
+  // times out. incr always resolving to 1 means "first hit this window",
+  // i.e. never rate-limited, which is what these tests want to exercise.
+  mockRedis: {
+    incr: vi.fn().mockResolvedValue(1),
+    expire: vi.fn().mockResolvedValue(1),
+  },
 }));
 
 vi.mock("@/lib/db/client", () => ({
   prisma: mockPrisma,
+}));
+
+vi.mock("@/lib/queue/client", () => ({
+  getRedisConnection: () => mockRedis,
 }));
 
 import { GET } from "../app/r/[slug]/route";
@@ -61,6 +73,28 @@ describe("tracked link redirect route", () => {
         referrer: "https://instagram.com/",
       }),
     });
+  });
+
+  it("still redirects but skips logging the click once the per-IP rate limit is hit", async () => {
+    mockPrisma.trackedLink.findUnique.mockResolvedValue({
+      id: "link_123",
+      workspaceId: "workspace_123",
+      automationId: "automation_123",
+      destinationUrl: "https://example.com/offer",
+      automation: { instagramAccountId: "instagram_account_123" },
+    });
+    mockRedis.incr.mockResolvedValue(31); // over CLICK_LIMIT_MAX
+
+    const response = await GET(
+      new Request("https://manychat-alternative.com/r/abc123", {
+        headers: { "x-forwarded-for": "203.0.113.10" },
+      }) as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ slug: "abc123" }) }
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://example.com/offer");
+    expect(mockPrisma.linkClick.create).not.toHaveBeenCalled();
   });
 
   it("redirects unknown slugs to the homepage without logging a click", async () => {

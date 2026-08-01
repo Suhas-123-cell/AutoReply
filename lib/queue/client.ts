@@ -31,6 +31,10 @@ export interface ProcessCommentJob {
   mediaId: string;
   requeueAttempt?: number;
   burstRequeueAttempt?: number;
+  // Unix seconds. Optional so existing/older enqueued jobs and any caller
+  // that doesn't have it degrade gracefully — the worker's age check is
+  // simply skipped when this is absent, never treated as "instantly stale".
+  commentTimestamp?: number;
   // Which path enqueued this comment. Recorded in the shared ProcessedComment
   // dedup store so the reconciler can tell webhook- from polling-caught comments.
   source?: CommentSource;

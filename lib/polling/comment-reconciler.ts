@@ -237,6 +237,7 @@ async function sweepCampaign(
         commenterId: c.from!.id,
         commenterName: c.from?.username,
         mediaId,
+        commentTimestamp: Math.floor(Date.parse(c.timestamp) / 1000),
         source: "POLLING",
       });
       stat.enqueued += 1;
