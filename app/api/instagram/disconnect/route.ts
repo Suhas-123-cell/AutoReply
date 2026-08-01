@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
+import { logAuditEvent } from "@/lib/audit";
 import {
   canManageWorkspace,
   getCurrentWorkspaceContext,
@@ -30,6 +31,11 @@ export async function POST(request: NextRequest) {
       workspaceId: context.workspaceId,
       ...(instagramAccountId ? { id: instagramAccountId } : {}),
     },
+  });
+
+  await logAuditEvent(context.workspaceId, "Instagram account disconnected", {
+    instagramAccountId,
+    byUserId: context.userId,
   });
 
   return NextResponse.json({ success: true });

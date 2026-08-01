@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
+import { logAuditEvent } from "@/lib/audit";
 import {
   buildInvitationUrl,
   generateInvitationToken,
@@ -247,6 +248,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     await prisma.workspaceMember.delete({ where: { id: member.id } });
+
+    await logAuditEvent(context.workspaceId, "Workspace member removed", {
+      memberId: member.id,
+      removedUserId: member.userId,
+      byUserId: context.userId,
+    });
   }
 
   if (parsed.data.invitationId) {
@@ -257,6 +264,11 @@ export async function DELETE(request: NextRequest) {
         status: "PENDING",
       },
       data: { status: "REVOKED" },
+    });
+
+    await logAuditEvent(context.workspaceId, "Workspace invitation revoked", {
+      invitationId: parsed.data.invitationId,
+      byUserId: context.userId,
     });
   }
 

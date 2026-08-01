@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentWorkspaceId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
+import { logAuditEvent } from "@/lib/audit";
 import { calculateCtr, normalizeTopKeywords } from "@/lib/tracking/analytics";
 import { buildTrackedUrl } from "@/lib/tracking/message";
 import { generateTrackedLinkSlug } from "@/lib/tracking/server";
@@ -634,6 +635,11 @@ export async function DELETE(request: NextRequest) {
   }
 
   await prisma.automation.delete({ where: { id: automationId } });
+
+  await logAuditEvent(workspaceId, "Campaign deleted", {
+    automationId,
+    name: existing.name,
+  });
 
   return NextResponse.json({ success: true, data: { deleted: true } });
 }
