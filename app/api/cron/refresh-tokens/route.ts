@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
 import { decryptToken, encryptToken } from "@/lib/meta/oauth";
 import { refreshLongLivedToken } from "@/lib/meta/client";
+import { enqueuePush } from "@/lib/push/notify";
 
 const DAYS_BEFORE_EXPIRY = 10;
 
@@ -87,6 +88,18 @@ export async function GET(request: NextRequest) {
           },
         },
       });
+
+      // This account was already within DAYS_BEFORE_EXPIRY and the automatic
+      // refresh just failed, so its connection may stop working soon.
+      await enqueuePush({
+        kind: "token_expiring",
+        workspaceId: account.workspaceId,
+        title: "Instagram connection needs attention",
+        body: `@${account.username}'s Instagram connection couldn't refresh and may stop working soon.`,
+        data: { deepLink: "/settings" },
+      }).catch((pushError) =>
+        console.error("[Token Refresh] Failed to enqueue push:", pushError)
+      );
 
       results.push({
         instagramAccountId: account.id,
