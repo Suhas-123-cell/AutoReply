@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db/client";
 export const dynamic = "force-dynamic";
 
 const preferencesSchema = z.object({
-  expoPushToken: z.string().min(1),
+  fcmToken: z.string().min(1),
   leadAlerts: z.boolean().optional(),
   failureAlerts: z.boolean().optional(),
 });
@@ -29,7 +29,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const { expoPushToken, leadAlerts, failureAlerts } = parsed.data;
+  const { fcmToken, leadAlerts, failureAlerts } = parsed.data;
   if (leadAlerts === undefined && failureAlerts === undefined) {
     return NextResponse.json(
       { success: false, error: "No preferences supplied" },
@@ -40,7 +40,7 @@ export async function PATCH(request: NextRequest) {
   // Scoped to the caller's own userId, so one signed-in user can never flip
   // notification preferences on another user's device row.
   const updated = await prisma.pushDevice.updateMany({
-    where: { expoPushToken, userId },
+    where: { fcmToken, userId },
     data: {
       ...(leadAlerts !== undefined ? { leadAlerts } : {}),
       ...(failureAlerts !== undefined ? { failureAlerts } : {}),

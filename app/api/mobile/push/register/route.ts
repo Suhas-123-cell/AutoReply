@@ -6,14 +6,14 @@ import { prisma } from "@/lib/db/client";
 export const dynamic = "force-dynamic";
 
 const registerSchema = z.object({
-  expoPushToken: z.string().min(1),
+  fcmToken: z.string().min(1),
   platform: z.enum(["ios", "android"]),
   appVersion: z.string().max(50).optional().nullable(),
   deviceName: z.string().max(100).optional().nullable(),
 });
 
 const unregisterSchema = z.object({
-  expoPushToken: z.string().min(1),
+  fcmToken: z.string().min(1),
 });
 
 export async function POST(request: NextRequest) {
@@ -34,16 +34,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { expoPushToken, platform, appVersion, deviceName } = parsed.data;
+  const { fcmToken, platform, appVersion, deviceName } = parsed.data;
 
-  // Unique on expoPushToken, not userId — a device that re-registers (or was
+  // Unique on fcmToken, not userId — a device that re-registers (or was
   // reassigned to a different signed-in user) simply takes over the row and
   // is re-enabled, rather than accumulating stale duplicates.
   const device = await prisma.pushDevice.upsert({
-    where: { expoPushToken },
+    where: { fcmToken },
     create: {
       userId,
-      expoPushToken,
+      fcmToken,
       platform,
       appVersion: appVersion ?? null,
       deviceName: deviceName ?? null,
@@ -82,7 +82,7 @@ export async function DELETE(request: NextRequest) {
   // Idempotent: a client logging out with an already-removed token must
   // still succeed.
   await prisma.pushDevice.deleteMany({
-    where: { expoPushToken: parsed.data.expoPushToken, userId },
+    where: { fcmToken: parsed.data.fcmToken, userId },
   });
 
   return NextResponse.json({ success: true });

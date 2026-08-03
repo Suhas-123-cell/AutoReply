@@ -6,7 +6,7 @@ import {
 } from "./client";
 import { pushCountKey } from "@/lib/push/notify";
 import { prisma } from "@/lib/db/client";
-import { sendExpoPushNotifications, type ExpoPushMessage } from "@/lib/push/expo";
+import { sendFcmPushNotifications, type FcmPushMessage } from "@/lib/push/fcm";
 
 // new_lead/send_failure are gated by the matching PushDevice preference flag;
 // worker_failure and token_expiring have no dedicated flag, so any
@@ -29,7 +29,7 @@ async function resolveTargetDevices(
   workspaceId: string | null,
   kind: PushKind,
   targetRole?: "OWNER"
-): Promise<{ expoPushToken: string }[]> {
+): Promise<{ fcmToken: string }[]> {
   if (!workspaceId) return [];
 
   const members = await prisma.workspaceMember.findMany({
@@ -49,7 +49,7 @@ async function resolveTargetDevices(
       disabledAt: null,
       ...(preferenceField ? { [preferenceField]: true } : {}),
     },
-    select: { expoPushToken: true },
+    select: { fcmToken: true },
   });
 }
 
@@ -81,25 +81,26 @@ async function processPush(job: Job<PushQueueJob>): Promise<void> {
     payloadData = { kind: data.kind };
   }
 
-  const messages: ExpoPushMessage[] = devices.map((device) => ({
-    to: device.expoPushToken,
+  const messages: FcmPushMessage[] = devices.map((device) => ({
+    to: device.fcmToken,
     title,
     body,
     data: payloadData,
   }));
 
-  const tickets = await sendExpoPushNotifications(messages);
+  const tickets = await sendFcmPushNotifications(messages);
 
   const staleTokens = tickets
     .filter(
       (ticket) =>
-        ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered"
+        ticket.status === "error" &&
+        ticket.errorCode === "messaging/registration-token-not-registered"
     )
     .map((ticket) => ticket.to);
 
   if (staleTokens.length > 0) {
     await prisma.pushDevice.updateMany({
-      where: { expoPushToken: { in: staleTokens } },
+      where: { fcmToken: { in: staleTokens } },
       data: { disabledAt: new Date() },
     });
   }
