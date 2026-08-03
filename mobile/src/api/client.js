@@ -1,7 +1,9 @@
+/* global AbortSignal -- provided by RN's fetch polyfill at runtime; not in @react-native/eslint-config's known globals */
 /**
  * Thin fetch wrapper for the OpenReply backend.
  *
- * - Reads the base URL from EXPO_PUBLIC_API_BASE_URL (inlined by Metro at build time).
+ * - Reads the base URL from API_BASE_URL via react-native-config (a native-module-backed
+ *   read of the .env file baked into the app at build time).
  * - Attaches `Authorization: Bearer <token>` from an in-memory token that is hydrated
  *   once at boot (see src/auth/AuthContext.js) — never reads SecureStore per-request.
  * - Unwraps the `{ success, data, error }` envelope used by every OpenReply API route.
@@ -9,9 +11,11 @@
  *   (single-flight guarded so N concurrent 401s only trigger one sign-out).
  */
 
+import Config from "react-native-config";
+
 import { clearSession } from "../auth/session-store";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "";
+const BASE_URL = Config.API_BASE_URL ?? "";
 
 const DEFAULT_TIMEOUT_MS = 20000;
 // This route can be slow (Instagram Graph API round trip); give it more room.

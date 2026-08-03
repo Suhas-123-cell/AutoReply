@@ -1,3 +1,4 @@
+/* global AbortSignal -- provided by RN's fetch polyfill at runtime; not in @react-native/eslint-config's known globals */
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 
 jest.mock("../../auth/session-store", () => ({
@@ -10,8 +11,11 @@ beforeEach(() => {
   jest.resetModules();
   jest.clearAllMocks();
   global.fetch = jest.fn();
-  // apiFetch reads EXPO_PUBLIC_API_BASE_URL at module-eval time.
-  process.env.EXPO_PUBLIC_API_BASE_URL = "https://api.test";
+  // apiFetch reads Config.API_BASE_URL (react-native-config) at module-eval
+  // time; the mock at __mocks__/react-native-config.js re-exports
+  // process.env, so setting this here is the same override react-native-config
+  // itself does via its Podfile/Gradle .env injection at build time.
+  process.env.API_BASE_URL = "https://api.test";
   // require(), not a dynamic import() — jest.resetModules() only produces a
   // fresh module instance (needed since client.js has top-level mutable
   // state like inMemoryToken) via the CJS registry Babel transforms this

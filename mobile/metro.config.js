@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Metro loads this file via Node's CommonJS require(), not ESM */
-const { getDefaultConfig } = require("expo/metro-config");
+const { getDefaultConfig } = require("@react-native/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 
 const config = getDefaultConfig(__dirname);
