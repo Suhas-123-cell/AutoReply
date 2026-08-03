@@ -41,7 +41,7 @@ export async function createMobileSession(
 
 // Idempotent: a client with an already-dead token must still be able to "log
 // out" locally without the server call failing. Push-device cleanup is not
-// handled here — PushDevice is keyed by userId + expoPushToken, not session,
+// handled here — PushDevice is keyed by userId + fcmToken, not session,
 // so the client unregisters its own token explicitly via
 // DELETE /api/mobile/push/register before calling this.
 export async function revokeMobileSession(sessionToken: string): Promise<void> {

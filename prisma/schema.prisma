@@ -418,7 +418,7 @@ model MobileSessionMeta {
 model PushDevice {
   id            String    @id @default(cuid())
   userId        String
-  expoPushToken String    @unique
+  fcmToken      String    @unique
   platform      String
   appVersion    String?
   deviceName    String?

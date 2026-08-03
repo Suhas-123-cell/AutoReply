@@ -50,6 +50,47 @@ export function getMetaGraphApiVersion(): string {
   return process.env.META_GRAPH_API_VERSION ?? "v25.0";
 }
 
+export interface FirebaseServiceAccount {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+}
+
+// The Firebase console downloads a service account key as JSON; we store the
+// whole blob in one env var rather than three, so there's a single secret to
+// rotate. FCM delivers to both platforms from this one credential — Android
+// devices register a native FCM token, iOS devices register an APNs token
+// that Firebase re-wraps into an FCM token once the project's APNs key is
+// configured in the console.
+export function getFirebaseServiceAccount(): FirebaseServiceAccount {
+  const raw = readEnv("FIREBASE_SERVICE_ACCOUNT_JSON");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must be valid JSON");
+  }
+
+  const { project_id, client_email, private_key } = parsed as Record<string, unknown>;
+  if (
+    typeof project_id !== "string" ||
+    typeof client_email !== "string" ||
+    typeof private_key !== "string"
+  ) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT_JSON must include project_id, client_email, and private_key"
+    );
+  }
+
+  return {
+    projectId: project_id,
+    clientEmail: client_email,
+    // The JSON from the console escapes newlines as literal "\n"; the SDK
+    // needs real line breaks to parse the PEM key.
+    privateKey: private_key.replace(/\\n/g, "\n"),
+  };
+}
+
 export const serverEnvSchema = z.object({
   NEXTAUTH_URL: z.string().url(),
   NEXTAUTH_SECRET: z.string().min(16),

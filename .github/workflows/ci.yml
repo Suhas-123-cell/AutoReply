@@ -66,3 +66,4 @@ jobs:
           INSTAGRAM_APP_SECRET: test
           FACEBOOK_APP_SECRET: test
           WEBHOOK_VERIFY_TOKEN: test
+          FIREBASE_SERVICE_ACCOUNT_JSON: '{"project_id":"test","client_email":"test@test.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n"}'
