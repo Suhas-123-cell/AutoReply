@@ -6,34 +6,30 @@ pluginManagement {
     }.standardOutput.asText.get().trim()
   ).getParentFile().absolutePath
   includeBuild(reactNativeGradlePlugin)
-  
-  def expoPluginsPath = new File(
-    providers.exec {
-      workingDir(rootDir)
-      commandLine("node", "--print", "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })")
-    }.standardOutput.asText.get().trim(),
-    "../android/expo-gradle-plugin"
-  ).absolutePath
-  includeBuild(expoPluginsPath)
 }
 
 plugins {
   id("com.facebook.react.settings")
-  id("expo-autolinking-settings")
 }
 
 extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-  if (System.getenv('EXPO_USE_COMMUNITY_AUTOLINKING') == '1') {
-    ex.autolinkLibrariesFromCommand()
-  } else {
-    ex.autolinkLibrariesFromCommand(expoAutolinking.rnConfigCommand)
-  }
+  ex.autolinkLibrariesFromCommand()
 }
-expoAutolinking.useExpoModules()
 
 rootProject.name = 'OpenReply'
 
-expoAutolinking.useExpoVersionCatalog()
-
 include ':app'
-includeBuild(expoAutolinking.reactNativeGradlePlugin)
+
+// Separate from the pluginManagement.includeBuild above: that one only
+// resolves the `plugins {}` DSL block; this plain top-level includeBuild is
+// what makes Gradle substitute the buildscript-classpath `classpath(...)`
+// dependency on com.facebook.react:react-native-gradle-plugin (in the root
+// build.gradle) with this local build, instead of trying to fetch it from a
+// remote Maven repo.
+def reactNativeGradlePluginForSubstitution = new File(
+  providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
+  }.standardOutput.asText.get().trim()
+).getParentFile().absolutePath
+includeBuild(reactNativeGradlePluginForSubstitution)

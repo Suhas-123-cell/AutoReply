@@ -10,13 +10,12 @@
  * parts changed.
  */
 import { useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, StatusBar } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClientProvider } from "@tanstack/react-query";
-import * as SplashScreen from "expo-splash-screen";
+import BootSplash from "react-native-bootsplash";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { queryClient } from "./query/client";
 import { authenticateAsync, isBiometricLockEnabled } from "./lib/biometric";
@@ -33,8 +32,6 @@ import { linking } from "./navigation/linking";
 import RootNavigator from "./navigation/RootNavigator";
 import "../global.css";
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
-
 // Re-lock only after a "real" backgrounding, not a brief app-switcher glance.
 const LOCK_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 
@@ -47,7 +44,7 @@ function RootNavigation() {
 
   useEffect(() => {
     if (isLoading) return;
-    SplashScreen.hideAsync().catch(() => {});
+    BootSplash.hide({ fade: true }).catch(() => {});
   }, [isLoading]);
 
   // Android notification channels + tap-to-deep-link, registered once.
@@ -127,7 +124,7 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <StatusBar style="light" />
+            <StatusBar barStyle="light-content" />
             <RootNavigation />
           </AuthProvider>
         </QueryClientProvider>

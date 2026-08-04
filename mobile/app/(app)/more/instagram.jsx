@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
-import * as WebBrowser from "expo-web-browser";
+import InAppBrowser from "react-native-inappbrowser-reborn";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../src/api/client";
 import { useAuth } from "../../../src/auth/AuthContext";
@@ -37,7 +37,13 @@ export default function InstagramSettingsScreen() {
     setConnecting(true);
     try {
       const { authorizeUrl } = await apiFetch("/api/mobile/instagram/connect");
-      await WebBrowser.openAuthSessionAsync(authorizeUrl, "openreply://ig-connect");
+      if (await InAppBrowser.isAvailable()) {
+        await InAppBrowser.openAuth(authorizeUrl, "openreply://ig-connect", {
+          ephemeralWebSession: false,
+        });
+      } else {
+        await InAppBrowser.open(authorizeUrl);
+      }
     } catch (err) {
       Alert.alert(
         "Couldn't start connection",

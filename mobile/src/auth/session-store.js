@@ -3,13 +3,13 @@
  * Stores only the session token + its expiry — no user/workspace data (that's
  * re-fetched from /api/mobile/auth/session on boot, see AuthContext.js).
  */
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../lib/secure-kv";
 
 const TOKEN_KEY = "openreply.sessionToken";
 const EXPIRES_AT_KEY = "openreply.sessionExpiresAt";
 
 const SAVE_OPTIONS = {
-  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  accessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
 export async function getToken() {

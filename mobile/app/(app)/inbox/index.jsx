@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, RefreshControl, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { apiFetch } from "../../../src/api/client";
 import EmptyState from "../../../src/ui/EmptyState";
 import Skeleton from "../../../src/ui/Skeleton";
