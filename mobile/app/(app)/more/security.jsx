@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Text, View } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import Card from "../../../src/ui/Card";
 import Toggle from "../../../src/ui/Toggle";
 import {

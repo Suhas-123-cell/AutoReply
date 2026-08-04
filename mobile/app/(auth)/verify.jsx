@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import Constants from "expo-constants";
 import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { colors } from "../../src/ui/tokens";
 
 export default function VerifyScreen() {
-  const { email, devCode } = useLocalSearchParams();
+  const { email, devCode } = useRoute().params ?? {};
   const [code, setCode] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const navigation = useNavigation();
   const { signIn } = useAuth();
 
   async function handleVerify() {
@@ -34,8 +34,8 @@ export default function VerifyScreen() {
         },
       });
       await signIn(data);
-      // No manual navigation here — app/_layout.jsx's redirect effect fires
-      // once isSignedIn flips true and sends us to /(app)/dashboard.
+      // No manual navigation here — RootNavigator's conditional tree swaps
+      // to AppTabs on its own once isSignedIn flips true.
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Invalid or expired code.");
     } finally {
@@ -74,7 +74,7 @@ export default function VerifyScreen() {
         )}
       </Pressable>
 
-      <Pressable onPress={() => router.back()} className="mt-4 items-center">
+      <Pressable onPress={() => navigation.goBack()} className="mt-4 items-center">
         <Text className="text-muted">Use a different email</Text>
       </Pressable>
     </View>

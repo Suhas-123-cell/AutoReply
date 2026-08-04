@@ -1,5 +1,6 @@
 import { Pressable, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useAuth } from "../src/auth/AuthContext";
 
 // Deep-link landing screen for openreply://ig-connect?status=...&reason=...
 // (Meta -> /api/instagram/callback -> this route, opened via
@@ -14,9 +15,21 @@ const STATUS_COPY = {
 };
 
 export default function IgConnectScreen() {
-  const { status, reason } = useLocalSearchParams();
-  const router = useRouter();
+  const { status, reason } = useRoute().params ?? {};
+  const navigation = useNavigation();
+  const { isSignedIn } = useAuth();
   const copy = STATUS_COPY[status] ?? { title: "Unknown status", tone: "error" };
+
+  const handleContinue = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // No back stack (e.g. this deep link was the very first screen to
+      // mount) — land on whichever root entry point matches auth state,
+      // same as the old router.replace("/(app)/dashboard") fallback.
+      navigation.reset({ index: 0, routes: [{ name: isSignedIn ? "AppTabs" : "AuthStack" }] });
+    }
+  };
 
   return (
     <View className="flex-1 items-center justify-center bg-background px-6">
@@ -29,10 +42,7 @@ export default function IgConnectScreen() {
       </Text>
       {reason ? <Text className="mb-6 text-center text-sm text-muted">{reason}</Text> : null}
 
-      <Pressable
-        onPress={() => (router.canGoBack() ? router.back() : router.replace("/(app)/dashboard"))}
-        className="rounded-lg bg-accent px-6 py-3"
-      >
+      <Pressable onPress={handleContinue} className="rounded-lg bg-accent px-6 py-3">
         <Text className="font-semibold text-background">Continue</Text>
       </Pressable>
     </View>

@@ -1,27 +1,27 @@
 import { Pressable, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../../src/ui/tokens";
 
 const ROWS = [
-  { href: "/more/instagram", label: "Instagram", icon: "logo-instagram" },
-  { href: "/more/overview", label: "Insights", icon: "stats-chart-outline" },
-  { href: "/more/members", label: "Team Members", icon: "people-outline" },
-  { href: "/more/usage", label: "Usage", icon: "speedometer-outline" },
-  { href: "/more/notifications", label: "Notifications", icon: "notifications-outline" },
-  { href: "/more/security", label: "Security", icon: "lock-closed-outline" },
-  { href: "/more/diagnostics", label: "Diagnostics", icon: "pulse-outline" },
-  { href: "/more/account", label: "Account", icon: "person-circle-outline" },
+  { screen: "Instagram", label: "Instagram", icon: "logo-instagram" },
+  { screen: "Overview", label: "Insights", icon: "stats-chart-outline" },
+  { screen: "Members", label: "Team Members", icon: "people-outline" },
+  { screen: "Usage", label: "Usage", icon: "speedometer-outline" },
+  { screen: "Notifications", label: "Notifications", icon: "notifications-outline" },
+  { screen: "Security", label: "Security", icon: "lock-closed-outline" },
+  { screen: "Diagnostics", label: "Diagnostics", icon: "pulse-outline" },
+  { screen: "Account", label: "Account", icon: "person-circle-outline" },
 ];
 
 export default function MoreScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   return (
     <View className="flex-1 bg-background">
       {ROWS.map((row) => (
         <Pressable
-          key={row.href}
-          onPress={() => router.push(row.href)}
+          key={row.screen}
+          onPress={() => navigation.navigate(row.screen)}
           className="flex-row items-center justify-between border-b border-border px-4 py-4"
         >
           <View className="flex-row items-center gap-3">

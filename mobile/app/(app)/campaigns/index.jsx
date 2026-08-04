@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../../src/api/client";
 import { useAuth } from "../../../src/auth/AuthContext";
@@ -13,7 +13,7 @@ import Toggle from "../../../src/ui/Toggle";
 import { colors } from "../../../src/ui/tokens";
 
 export default function CampaignsScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const { role } = useAuth();
   const canManage = canManageWorkspace(role);
   const queryClient = useQueryClient();
@@ -129,7 +129,7 @@ export default function CampaignsScreen() {
         }
         renderItem={({ item }) => (
           <Card className="mb-3">
-            <Pressable onPress={() => router.push(`/campaigns/${item.id}`)}>
+            <Pressable onPress={() => navigation.navigate("CampaignDetail", { id: item.id })}>
               <View className="flex-row items-center justify-between">
                 <Text
                   className="flex-1 pr-2 text-base font-semibold text-foreground"
@@ -173,7 +173,7 @@ export default function CampaignsScreen() {
 
       {canManage ? (
         <Pressable
-          onPress={() => router.push("/campaigns/new")}
+          onPress={() => navigation.navigate("CampaignNewStack")}
           className="absolute bottom-6 right-6 h-14 w-14 items-center justify-center rounded-full bg-accent"
           style={{ elevation: 4, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6 }}
         >

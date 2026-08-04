@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -22,8 +22,8 @@ const POLL_MS = 12000;
 const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export default function ThreadScreen() {
-  const router = useRouter();
-  const { conversationId, accountId, recipientId, username } = useLocalSearchParams();
+  const navigation = useNavigation();
+  const { conversationId, accountId, recipientId, username } = useRoute().params ?? {};
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState("");
@@ -125,7 +125,7 @@ export default function ThreadScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       <View className="flex-row items-center gap-2 border-b border-border px-2 py-3">
-        <Pressable onPress={() => router.back()} className="p-2" hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} className="p-2" hitSlop={8}>
           <Ionicons name="chevron-back" size={22} color={colors.foreground} />
         </Pressable>
         <Text className="text-base font-semibold text-foreground" numberOfLines={1}>

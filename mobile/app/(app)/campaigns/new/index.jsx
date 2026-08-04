@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/auth/AuthContext";
@@ -17,7 +17,7 @@ const SCOPES = [
 ];
 
 export default function WizardStep1() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const { role } = useAuth();
   const canManage = canManageWorkspace(role);
   const draft = useCampaignWizardStore((s) => s.draft);
@@ -49,7 +49,7 @@ export default function WizardStep1() {
   const handleNext = () => {
     const err = validateStep1(draft);
     if (err) return setError(err);
-    router.push("/campaigns/new/step-2");
+    navigation.navigate("CampaignNewStep2");
   };
 
   if (!canManage) {
@@ -138,7 +138,7 @@ export default function WizardStep1() {
 
           {draft.triggerScope === "specific" ? (
             <Pressable
-              onPress={() => router.push("/campaigns/new/post-picker")}
+              onPress={() => navigation.navigate("PostPicker")}
               className="mt-1 flex-row items-center gap-3 rounded-lg border border-border bg-surface p-3"
             >
               {draft.postThumb ? (
@@ -169,7 +169,7 @@ export default function WizardStep1() {
       <WizardFooter
         step={1}
         error={error}
-        onBack={() => router.back()}
+        onBack={() => navigation.goBack()}
         backLabel="Cancel"
         onNext={handleNext}
       />

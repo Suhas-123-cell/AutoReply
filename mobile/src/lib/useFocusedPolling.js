@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { AppState } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 /**
  * Returns a `refetchInterval` value for @tanstack/react-query that is only

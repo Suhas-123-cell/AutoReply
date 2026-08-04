@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../../src/api/client";
 import { buildAutomationPayload, validateStep5 } from "../../../../src/lib/campaign-validation";
@@ -10,7 +10,7 @@ import Toggle from "../../../../src/ui/Toggle";
 import WizardFooter from "../../../../src/ui/WizardFooter";
 
 export default function WizardStep5() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const draft = useCampaignWizardStore((s) => s.draft);
   const setFields = useCampaignWizardStore((s) => s.setFields);
@@ -23,7 +23,11 @@ export default function WizardStep5() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       reset();
-      router.dismissAll();
+      // No direct dismissAll() equivalent — CampaignNewStack is nested one
+      // level under CampaignsStack as a modal screen, so going back on the
+      // parent navigator (CampaignsStack) dismisses the whole modal wizard
+      // in one step, rather than popping one wizard screen at a time.
+      navigation.getParent()?.goBack();
     },
     onError: (err) => {
       setError(err instanceof ApiError ? err.message : "Could not create campaign");
@@ -152,7 +156,7 @@ export default function WizardStep5() {
       <WizardFooter
         step={5}
         error={error}
-        onBack={() => router.back()}
+        onBack={() => navigation.goBack()}
         onNext={handleSubmit}
         nextLabel="Create campaign"
         nextLoading={create.isPending}
