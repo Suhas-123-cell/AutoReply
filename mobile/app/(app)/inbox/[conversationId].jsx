@@ -11,8 +11,8 @@ import {
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Ionicons from "react-native-vector-icons/Ionicons";
+import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import { apiFetch, ApiError } from "../../../src/api/client";
 import { colors } from "../../../src/ui/tokens";
 import { formatRelativeTime } from "../../../src/lib/formatRelativeTime";
@@ -88,7 +88,10 @@ export default function ThreadScreen() {
       ];
     });
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    ReactNativeHapticFeedback.trigger("impactLight", {
+      enableVibrateFallback: true,
+      ignoreAndroidSystemSettings: false,
+    });
 
     try {
       await apiFetch("/api/instagram/conversations", {

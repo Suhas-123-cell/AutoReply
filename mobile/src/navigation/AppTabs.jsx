@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { colors } from "../ui/tokens";
 import DashboardScreen from "../../app/(app)/dashboard";
 import InboxStack from "./InboxStack";

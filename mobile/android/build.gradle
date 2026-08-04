@@ -1,14 +1,28 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+ext {
+  buildToolsVersion = "36.0.0"
+  minSdkVersion = 24
+  compileSdkVersion = 36
+  targetSdkVersion = 36
+  ndkVersion = "27.1.12297006"
+  kotlinVersion = "2.1.20"
+}
+
 buildscript {
+  ext.kotlinVersion = "2.1.20"
   repositories {
     google()
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle')
-    classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+    classpath('com.android.tools.build:gradle:8.9.2')
+    // Substituted with the local @react-native/gradle-plugin build via
+    // settings.gradle's top-level includeBuild — the version here is a
+    // placeholder Gradle needs for valid module notation, not what's
+    // actually resolved.
+    classpath('com.facebook.react:react-native-gradle-plugin:0.81.5')
+    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
   }
 }
 
@@ -20,5 +34,4 @@ allprojects {
   }
 }
 
-apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"

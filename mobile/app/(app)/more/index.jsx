@@ -1,6 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { colors } from "../../../src/ui/tokens";
 
 const ROWS = [

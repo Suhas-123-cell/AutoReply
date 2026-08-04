@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import Constants from "expo-constants";
+import DeviceInfo from "react-native-device-info";
 import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { colors } from "../../src/ui/tokens";
@@ -23,14 +23,15 @@ export default function VerifyScreen() {
     setError(null);
     setLoading(true);
     try {
+      const deviceName = await DeviceInfo.getDeviceName().catch(() => undefined);
       const data = await apiFetch("/api/mobile/auth/verify-code", {
         method: "POST",
         body: {
           email,
           code: trimmed,
           platform: Platform.OS,
-          deviceName: Constants.deviceName ?? undefined,
-          appVersion: Constants.expoConfig?.version ?? undefined,
+          deviceName,
+          appVersion: DeviceInfo.getVersion(),
         },
       });
       await signIn(data);
