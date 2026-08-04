@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Pressable, ScrollView, Share, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../../src/api/client";
 import { useAuth } from "../../../src/auth/AuthContext";
@@ -9,8 +9,8 @@ import Card from "../../../src/ui/Card";
 import Skeleton from "../../../src/ui/Skeleton";
 
 export default function CampaignDetailScreen() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
+  const { id } = useRoute().params ?? {};
+  const navigation = useNavigation();
   const { role } = useAuth();
   const canManage = canManageWorkspace(role);
 
@@ -110,7 +110,7 @@ export default function CampaignDetailScreen() {
 
       {canManage ? (
         <Pressable
-          onPress={() => router.push(`/campaigns/edit/${campaign.id}`)}
+          onPress={() => navigation.navigate("CampaignEdit", { id: campaign.id })}
           className="rounded-lg bg-accent px-4 py-3"
         >
           <Text className="text-center text-sm font-semibold text-background">Edit campaign</Text>

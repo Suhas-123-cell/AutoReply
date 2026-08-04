@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/auth/AuthContext";
@@ -17,8 +17,8 @@ import Toggle from "../../../../src/ui/Toggle";
 // loaded campaign are sent in the PATCH body, since updateAutomationSchema
 // treats every field as independently optional (undefined = unchanged).
 export default function EditCampaignScreen() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
+  const { id } = useRoute().params ?? {};
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { role } = useAuth();
   const canManage = canManageWorkspace(role);
@@ -86,7 +86,7 @@ export default function EditCampaignScreen() {
     mutationFn: (body) => apiFetch(`/api/automations?id=${id}`, { method: "PATCH", body }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
-      router.back();
+      navigation.goBack();
     },
     onError: (err) => {
       setError(err instanceof ApiError ? err.message : "Could not update campaign");
@@ -179,7 +179,7 @@ export default function EditCampaignScreen() {
       diff.secondaryDestinationUrl = full.secondaryDestinationUrl;
     }
 
-    if (Object.keys(diff).length === 0) return router.back();
+    if (Object.keys(diff).length === 0) return navigation.goBack();
     update.mutate(diff);
   };
 

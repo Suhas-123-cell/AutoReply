@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { validateStep4 } from "../../../../src/lib/campaign-validation";
 import { useCampaignWizardStore } from "../../../../src/store/campaignWizardStore";
 import CampaignPreviewSheet from "../../../../src/ui/CampaignPreviewSheet";
 import WizardFooter from "../../../../src/ui/WizardFooter";
 
 export default function WizardStep4() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const draft = useCampaignWizardStore((s) => s.draft);
   const setFields = useCampaignWizardStore((s) => s.setFields);
   const [error, setError] = useState(null);
@@ -18,7 +18,7 @@ export default function WizardStep4() {
   const handleNext = () => {
     const err = validateStep4(draft);
     if (err) return setError(err);
-    router.push("/campaigns/new/step-5");
+    navigation.navigate("CampaignNewStep5");
   };
 
   return (
@@ -111,7 +111,7 @@ export default function WizardStep4() {
       <WizardFooter
         step={4}
         error={error}
-        onBack={() => router.back()}
+        onBack={() => navigation.goBack()}
         onNext={handleNext}
       />
 

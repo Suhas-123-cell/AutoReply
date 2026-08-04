@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { apiFetch, ApiError } from "../../src/api/client";
 import { colors } from "../../src/ui/tokens";
 
@@ -16,7 +16,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const navigation = useNavigation();
 
   async function handleSubmit() {
     const trimmed = email.trim();
@@ -31,10 +31,7 @@ export default function SignInScreen() {
         method: "POST",
         body: { email: trimmed },
       });
-      router.push({
-        pathname: "/(auth)/verify",
-        params: { email: trimmed, devCode: data?.devCode ?? "" },
-      });
+      navigation.navigate("Verify", { email: trimmed, devCode: data?.devCode ?? "" });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {

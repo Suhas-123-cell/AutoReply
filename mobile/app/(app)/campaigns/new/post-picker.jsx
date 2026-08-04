@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { FlatList, Image, Pressable, Text, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../../../src/api/client";
 import { useCampaignWizardStore } from "../../../../src/store/campaignWizardStore";
@@ -19,7 +19,7 @@ import Skeleton from "../../../../src/ui/Skeleton";
  * same way rather than inventing new backend behavior.
  */
 export default function PostPickerScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const draft = useCampaignWizardStore((s) => s.draft);
   const setFields = useCampaignWizardStore((s) => s.setFields);
   const [query, setQuery] = useState("");
@@ -59,7 +59,7 @@ export default function PostPickerScreen() {
       postThumb: post.thumbnail_url ?? post.media_url ?? null,
       postCaption: post.caption ?? "",
     });
-    router.back();
+    navigation.goBack();
   };
 
   if (isLoading) {

@@ -17,6 +17,7 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import { apiFetch, ApiError } from "../api/client";
+import { navigate } from "../navigation/navigationRef";
 
 const PRIMER_SEEN_KEY = "openreply.pushPrimerSeen";
 const TOKEN_KEY = "openreply.expoPushToken";
@@ -149,8 +150,12 @@ export async function updatePushPreferences(prefs) {
 
 // Maps the web-shaped deep links the backend sends (see
 // lib/queue/dm-worker.ts's enqueuePush calls, e.g. "/logs?highlight=<id>")
-// to their mobile equivalents. Unrecognized paths pass through as-is.
-const DEEP_LINK_ROUTE_MAP = [[/^\/logs\b/, "/activity"]];
+// to the React Navigation screen name that should open. (Previously these
+// mapped to expo-router paths passed to router.push(); now that navigation
+// goes through the module-level navigationRef instead of a router prop —
+// see navigate() in ../navigation/navigationRef — the map targets a screen
+// name directly rather than a path string.)
+const DEEP_LINK_ROUTE_MAP = [[/^\/logs\b/, "Activity"]];
 
 export function mapDeepLinkToRoute(deepLink) {
   if (!deepLink) return null;
@@ -162,11 +167,11 @@ export function mapDeepLinkToRoute(deepLink) {
   return deepLink;
 }
 
-/** Registers the notification-tap handler. Call once from the root layout. */
-export function addNotificationResponseListener(router) {
+/** Registers the notification-tap handler. Call once from the app root. */
+export function addNotificationResponseListener() {
   return Notifications.addNotificationResponseReceivedListener((response) => {
     const deepLink = response.notification.request.content.data?.deepLink;
-    const route = mapDeepLinkToRoute(deepLink);
-    if (route) router.push(route);
+    const screenName = mapDeepLinkToRoute(deepLink);
+    if (screenName) navigate(screenName);
   });
 }

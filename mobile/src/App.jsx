@@ -1,22 +1,36 @@
+/**
+ * App root, previously app/_layout.jsx (expo-router's file-based root
+ * layout). expo-router provided its own NavigationContainer + Slot
+ * implicitly; now that's explicit here: GestureHandlerRootView ->
+ * SafeAreaProvider -> QueryClientProvider -> AuthProvider -> NavigationContainer.
+ *
+ * Splash-screen show/hide, the biometric re-lock AppState listener, and the
+ * overlay rendering (BiometricLockOverlay, PushPermissionModal) are all
+ * preserved verbatim from app/_layout.jsx — only the routing/navigation
+ * parts changed.
+ */
 import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { Slot, useRouter, useSegments } from "expo-router";
+import { NavigationContainer } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClientProvider } from "@tanstack/react-query";
 import * as SplashScreen from "expo-splash-screen";
-import { AuthProvider, useAuth } from "../src/auth/AuthContext";
-import { queryClient } from "../src/query/client";
-import { authenticateAsync, isBiometricLockEnabled } from "../src/lib/biometric";
-import BiometricLockOverlay from "../src/ui/BiometricLockOverlay";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { queryClient } from "./query/client";
+import { authenticateAsync, isBiometricLockEnabled } from "./lib/biometric";
+import BiometricLockOverlay from "./ui/BiometricLockOverlay";
 import {
   addNotificationResponseListener,
   configureAndroidChannels,
   hasSeenPushPrimer,
   markPushPrimerSeen,
-} from "../src/push/register";
-import PushPermissionModal from "../src/push/PushPermissionModal";
+} from "./push/register";
+import PushPermissionModal from "./push/PushPermissionModal";
+import { navigationRef } from "./navigation/navigationRef";
+import { linking } from "./navigation/linking";
+import RootNavigator from "./navigation/RootNavigator";
 import "../global.css";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -26,8 +40,6 @@ const LOCK_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 
 function RootNavigation() {
   const { isLoading, isSignedIn, signOut } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
 
   const [showLock, setShowLock] = useState(false);
   const [showPushPrimer, setShowPushPrimer] = useState(false);
@@ -36,22 +48,14 @@ function RootNavigation() {
   useEffect(() => {
     if (isLoading) return;
     SplashScreen.hideAsync().catch(() => {});
-
-    const inAuthGroup = segments[0] === "(auth)";
-
-    if (!isSignedIn && !inAuthGroup) {
-      router.replace("/(auth)/sign-in");
-    } else if (isSignedIn && inAuthGroup) {
-      router.replace("/(app)/dashboard");
-    }
-  }, [isLoading, isSignedIn, segments, router]);
+  }, [isLoading]);
 
   // Android notification channels + tap-to-deep-link, registered once.
   useEffect(() => {
     configureAndroidChannels();
-    const sub = addNotificationResponseListener(router);
+    const sub = addNotificationResponseListener();
     return () => sub.remove();
-  }, [router]);
+  }, []);
 
   // Pre-permission push explainer: shown at most once per install, the first
   // time this device is signed in (covers both a fresh sign-in and a cold
@@ -106,7 +110,9 @@ function RootNavigation() {
 
   return (
     <>
-      <Slot />
+      <NavigationContainer ref={navigationRef} linking={linking}>
+        <RootNavigator />
+      </NavigationContainer>
       {showLock ? (
         <BiometricLockOverlay onUnlock={handleUnlock} onSignOut={handleSignOutFromLock} />
       ) : null}
@@ -115,7 +121,7 @@ function RootNavigation() {
   );
 }
 
-export default function RootLayout() {
+export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

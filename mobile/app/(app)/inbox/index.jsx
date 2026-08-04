@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, RefreshControl, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../../../src/api/client";
 import EmptyState from "../../../src/ui/EmptyState";
@@ -13,7 +13,7 @@ import { useFocusedPolling } from "../../../src/lib/useFocusedPolling";
 const POLL_MS = 12000;
 
 export default function InboxListScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -43,14 +43,11 @@ export default function InboxListScreen() {
   const conversations = useMemo(() => data?.conversations ?? [], [data]);
 
   function openConversation(item) {
-    router.push({
-      pathname: "/inbox/[conversationId]",
-      params: {
-        conversationId: item.id,
-        accountId,
-        recipientId: item.contact.id,
-        username: item.contact.username ?? "",
-      },
+    navigation.navigate("Conversation", {
+      conversationId: item.id,
+      accountId,
+      recipientId: item.contact.id,
+      username: item.contact.username ?? "",
     });
   }
 
