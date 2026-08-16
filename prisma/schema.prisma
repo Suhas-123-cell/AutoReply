@@ -108,6 +108,9 @@ model Workspace {
   linkClicks        LinkClick[]
   webhookEvents     WebhookEvent[]
   operationalEvents OperationalEvent[]
+  telegramAccounts    TelegramAccount[]
+  telegramAutomations TelegramAutomation[]
+  telegramMessageLogs TelegramMessageLog[]
 
   @@index([ownerId])
 }
@@ -436,6 +439,89 @@ model MobileSessionMeta {
   appVersion   String?
   lastSeenAt   DateTime @default(now())
   createdAt    DateTime @default(now())
+}
+
+// --- Telegram channel support ---
+// Additive only: no columns changed on any pre-existing model. Telegram is
+// the zero-gate launch channel (no Meta App Review wait) — see
+// handoff/brief §4 and §8.5. One workspace can connect multiple bots, one
+// per client, same multi-account-per-agency shape as InstagramAccount.
+
+model TelegramAccount {
+  id          String   @id @default(cuid())
+  workspaceId String
+
+  // AES-256-GCM encrypted via lib/meta/oauth.ts's encryptToken — that helper
+  // is provider-agnostic (env-keyed AES-GCM), reused as-is rather than
+  // duplicating crypto code under lib/telegram/.
+  botToken String
+
+  botId       String  @unique
+  botUsername String
+  // Telegram's own webhook auth mechanism: passed as `secret_token` to
+  // setWebhook, echoed back on every update as the
+  // X-Telegram-Bot-Api-Secret-Token header. Telegram has no HMAC-signature
+  // scheme like Meta's x-hub-signature-256, so this is the equivalent check.
+  webhookSecret String
+
+  connectedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  automations  TelegramAutomation[]
+  messageLogs  TelegramMessageLog[]
+
+  @@index([workspaceId])
+}
+
+model TelegramAutomation {
+  id                String @id @default(cuid())
+  workspaceId       String
+  telegramAccountId String
+
+  name           String
+  keywords       String[]
+  wholeWordMatch Boolean  @default(true)
+  replyMessage   String
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace       Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  telegramAccount TelegramAccount     @relation(fields: [telegramAccountId], references: [id], onDelete: Cascade)
+  messageLogs     TelegramMessageLog[]
+
+  @@index([workspaceId])
+  @@index([telegramAccountId])
+}
+
+model TelegramMessageLog {
+  id                String  @id @default(cuid())
+  workspaceId       String
+  telegramAccountId String
+  automationId      String?
+
+  chatId         String
+  senderUsername String?
+  messageText    String
+  matchedKeyword String?
+  status         DmStatus  @default(PENDING)
+  attempts       Int       @default(0)
+  sentAt         DateTime?
+  errorMessage   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace       Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  telegramAccount TelegramAccount     @relation(fields: [telegramAccountId], references: [id], onDelete: Cascade)
+  automation      TelegramAutomation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+
+  @@unique([telegramAccountId, chatId, messageText, createdAt])
+  @@index([workspaceId])
+  @@index([telegramAccountId])
+  @@index([chatId])
 }
 
 model PushDevice {

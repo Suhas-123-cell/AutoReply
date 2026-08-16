@@ -5,6 +5,7 @@ import { colors } from "../../../src/ui/tokens";
 
 const ROWS = [
   { screen: "Instagram", label: "Instagram", icon: "logo-instagram" },
+  { screen: "Telegram", label: "Telegram", icon: "paper-plane-outline" },
   { screen: "Overview", label: "Insights", icon: "stats-chart-outline" },
   { screen: "Members", label: "Team Members", icon: "people-outline" },
   { screen: "Usage", label: "Usage", icon: "speedometer-outline" },

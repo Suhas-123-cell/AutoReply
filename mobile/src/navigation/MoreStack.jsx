@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { colors } from "../ui/tokens";
 import MoreMenuScreen from "../../app/(app)/more/index";
 import InstagramScreen from "../../app/(app)/more/instagram";
+import TelegramScreen from "../../app/(app)/more/telegram";
 import MembersScreen from "../../app/(app)/more/members";
 import UsageScreen from "../../app/(app)/more/usage";
 import AccountScreen from "../../app/(app)/more/account";
@@ -26,6 +27,7 @@ export default function MoreStack() {
     >
       <Stack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: "More" }} />
       <Stack.Screen name="Instagram" component={InstagramScreen} options={{ title: "Instagram" }} />
+      <Stack.Screen name="Telegram" component={TelegramScreen} options={{ title: "Telegram" }} />
       <Stack.Screen name="Members" component={MembersScreen} options={{ title: "Team Members" }} />
       <Stack.Screen name="Usage" component={UsageScreen} options={{ title: "Usage" }} />
       <Stack.Screen name="Account" component={AccountScreen} options={{ title: "Account" }} />
