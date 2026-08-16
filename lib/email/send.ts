@@ -13,7 +13,7 @@ export async function sendEmail(opts: {
   html: string;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM ?? "OpenReply <login@example.com>";
+  const from = process.env.EMAIL_FROM ?? "AutoReply <login@example.com>";
 
   if (!apiKey) {
     throw new Error("RESEND_API_KEY environment variable is required");

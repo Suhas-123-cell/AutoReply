@@ -15,14 +15,17 @@ const AUTH_TAG_LENGTH = 16;
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 interface OAuthStatePayload {
-  workspaceId: string;
+  // Absent only for the mobile "sign up with Instagram" flow (client ===
+  // "mobile-signup"), where there is no workspace yet — the callback route
+  // creates one. Every other flow requires it.
+  workspaceId?: string;
   ts: number;
   // Present only for mobile-initiated connects (see
   // app/api/mobile/instagram/connect/route.ts). The mobile OAuth session has
   // no session cookie inside ASWebAuthenticationSession, so identity has to
   // travel in the signed state instead of coming from auth().
   userId?: string;
-  client?: "mobile";
+  client?: "mobile" | "mobile-signup";
 }
 
 function base64UrlEncode(value: string): string {
@@ -53,6 +56,19 @@ export function createOAuthState(
   return `${payload}.${signState(payload)}`;
 }
 
+// Mobile "sign up with Instagram" — no workspace exists yet, so this omits
+// workspaceId entirely rather than passing a placeholder. See
+// app/api/mobile/auth/instagram/start/route.ts.
+export function createSignupOAuthState(): string {
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      ts: Date.now(),
+      client: "mobile-signup" as const,
+    } satisfies OAuthStatePayload)
+  );
+  return `${payload}.${signState(payload)}`;
+}
+
 export function verifyOAuthState(state: string | null): OAuthStatePayload | null {
   if (!state) return null;
 
@@ -72,7 +88,11 @@ export function verifyOAuthState(state: string | null): OAuthStatePayload | null
 
   try {
     const parsed = JSON.parse(base64UrlDecode(payload)) as OAuthStatePayload;
-    if (!parsed.workspaceId || Date.now() - parsed.ts > STATE_MAX_AGE_MS) {
+    if (Date.now() - parsed.ts > STATE_MAX_AGE_MS) {
+      return null;
+    }
+    // Every flow except mobile-signup must carry a workspaceId.
+    if (!parsed.workspaceId && parsed.client !== "mobile-signup") {
       return null;
     }
 

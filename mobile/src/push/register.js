@@ -26,6 +26,20 @@ const TOKEN_KEY = "openreply.fcmToken";
 // as its identifier and there is no GET endpoint to read current prefs back.
 const PREFS_KEY = "openreply.pushPreferences";
 
+// `messaging()` throws synchronously if no native Firebase app has been
+// configured (no GoogleService-Info.plist / google-services.json) — a
+// self-hoster who hasn't set up Firebase yet, or a fresh dev build, would
+// otherwise hard-crash the entire app on every boot just from this module
+// being imported at the root. Push is an optional feature; its absence
+// should disable push, not the app.
+function getMessagingIfAvailable() {
+  try {
+    return messaging();
+  } catch {
+    return null;
+  }
+}
+
 export async function hasSeenPushPrimer() {
   return (await SecureStore.getItemAsync(PRIMER_SEEN_KEY)) === "true";
 }
@@ -80,6 +94,8 @@ async function displayForegroundNotification(remoteMessage) {
  * rather than throwing.
  */
 export async function registerForPushNotificationsAsync() {
+  if (!getMessagingIfAvailable()) return null;
+
   const existing = await messaging().hasPermission();
   let authorized =
     existing === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -181,6 +197,10 @@ function handleNotificationOpen(remoteMessage) {
  * unsubscribe function.
  */
 export function addNotificationResponseListener() {
+  if (!getMessagingIfAvailable()) {
+    return { remove() {} };
+  }
+
   const unsubForeground = messaging().onMessage(displayForegroundNotification);
 
   // Local (notifee-displayed) notification tapped while the app is

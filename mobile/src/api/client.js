@@ -1,12 +1,12 @@
-/* global AbortSignal -- provided by RN's fetch polyfill at runtime; not in @react-native/eslint-config's known globals */
+/* global AbortController -- provided by RN's fetch polyfill at runtime; not in @react-native/eslint-config's known globals */
 /**
- * Thin fetch wrapper for the OpenReply backend.
+ * Thin fetch wrapper for the AutoReply backend.
  *
  * - Reads the base URL from API_BASE_URL via react-native-config (a native-module-backed
  *   read of the .env file baked into the app at build time).
  * - Attaches `Authorization: Bearer <token>` from an in-memory token that is hydrated
  *   once at boot (see src/auth/AuthContext.js) — never reads SecureStore per-request.
- * - Unwraps the `{ success, data, error }` envelope used by every OpenReply API route.
+ * - Unwraps the `{ success, data, error }` envelope used by every AutoReply API route.
  * - On a 401, clears the token + SecureStore and fires a single registered callback
  *   (single-flight guarded so N concurrent 401s only trigger one sign-out).
  */
@@ -81,16 +81,25 @@ export async function apiFetch(path, options = {}) {
     requestHeaders.Authorization = `Bearer ${inMemoryToken}`;
   }
 
+  // AbortSignal.timeout() isn't implemented by RN's fetch/Hermes polyfills
+  // on every RN version (confirmed on 0.81: "AbortSignal.timeout is not a
+  // function"), so this builds the same thing manually — an AbortController
+  // whose signal fires after `timeout` ms — which works everywhere.
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), timeout);
+
   let response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
       headers: requestHeaders,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(timeout),
+      signal: abortController.signal,
     });
   } catch (err) {
     throw new ApiError(0, err?.message ?? "Network request failed");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   let json = null;
