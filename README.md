@@ -1,115 +1,103 @@
 <div align="center">
 
-# OpenReply
+# AutoReply
 
-Open-sourced ManyChat for Instagram comment-to-DM automation.
+Open-source Instagram + Telegram comment-to-DM automation, for the mobile app only — no web dashboard.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/diwenne/openreply?style=flat&color=black)](https://github.com/diwenne/openreply/stargazers)
 [![Built with Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org)
+[![React Native](https://img.shields.io/badge/React_Native-0.81-black.svg)](https://reactnative.dev)
 
 </div>
 
-Someone comments `LINK` on your reel, and they get a DM with your link a second later. That is the whole idea. OpenReply watches the comments on your Instagram posts, and when a comment matches a keyword you set, it sends that person a private reply through the official Meta API. You can also post a public reply under the comment at the same time.
+Someone comments `LINK` on your reel, and they get a DM with your link a second later. AutoReply watches the comments on your Instagram posts (and, separately, messages sent to your Telegram bot), and when a comment or message matches a keyword you set, it sends a private reply through the official Meta API or the Telegram Bot API. You can also post a public reply under the Instagram comment at the same time.
 
-ManyChat does this and charges a monthly fee. OpenReply is the same core feature, free, running on your own infrastructure, with no seat limits and no plan caps.
-
-> If this saves you a subscription or a weekend of building, a star on the repo genuinely helps other people find it.
+There is no web dashboard. Everything — sign-in, campaigns, inbox, activity, team management — happens in the iOS/Android app in `mobile/`. The Next.js app in the repo root is an API-only backend the mobile app talks to; it has no pages of its own.
 
 ## Why this exists
 
-Comment-to-DM is one feature, but every tool that offers it wants a recurring subscription for it. The actual work is a webhook, a keyword match, and one API call to Meta. That does not need to cost anything to run for a single account.
+Comment-to-DM is one feature, but every tool that offers it wants a recurring subscription for it. The actual work is a webhook, a keyword match, and one API call to Meta or Telegram. That does not need to cost anything to run for a single account — and it doesn't have to run through a web browser either.
 
-OpenReply is built around Meta's official Instagram private replies. It does not scrape, it does not automate a browser, and it never asks for an Instagram password. That keeps your account inside Meta's rules, which matters if you care about not getting flagged.
+AutoReply is built around Meta's official Instagram private replies and Telegram's official Bot API. It does not scrape, it does not automate a browser, and it never asks for an Instagram password. That keeps your account inside each platform's rules.
 
 ## Features
 
-- Keyword to DM. Match one or many keywords per post, whole-word or partial.
-- Optional public reply. Post a visible comment reply on top of the DM.
+- Keyword to DM, on Instagram or Telegram. Match one or many keywords, whole-word or partial.
+- Optional public reply on Instagram. Post a visible comment reply on top of the DM.
+- Telegram bots, zero gate. Connect a `@BotFather` token and you're live in about two minutes — no Meta App Review wait.
 - Tracked links. Swap a link for a tracked redirect and see clicks and CTR per campaign.
 - Two link buttons. Send up to two tappable link buttons in one DM, each a separate tracked link with its own click stats.
-- Follow gate. Optionally require a follow before you hand over the link. The DM asks the commenter to follow and tap a button; on tap, OpenReply checks Meta's `is_user_follow_business` flag and only sends the link once they follow, re-prompting until then. It fails open (sends the link anyway) when Instagram does not return follow status, so a real follower is never trapped.
+- Follow gate (Instagram). Optionally require a follow before you hand over the link, checked against Meta's `is_user_follow_business` flag. Fails open (sends the link anyway) if Instagram doesn't return follow status, so a real follower is never trapped.
 - Personalization. Use `{username}` in your message to greet the commenter by name.
-- Per-account rate limiting. Stays under Meta's documented cap of 750 private replies per hour, and queues the overflow instead of dropping it.
-- Multiple Instagram accounts. Connect several professional accounts under one workspace, each with its own limits.
-- Workspaces and roles. Owner, admin, and member roles with invite links, useful if you run this for clients.
+- Per-account rate limiting. Stays under Meta's documented cap of 750 private replies per hour, queuing the overflow instead of dropping it.
+- Multiple accounts, Instagram and Telegram both. Connect several under one workspace, each with its own limits.
+- Workspaces, roles, and per-account permissions. Owner, admin, and member roles with invite links; an owner or admin can additionally scope a MEMBER to only the specific client accounts they're supposed to see — useful if you run this for an agency's multiple clients.
+- Campaign cloning. Reuse one client's automation setup on another without rebuilding it by hand.
 - Campaign templates. Start from a preset instead of a blank form.
-- Inbox. Read your Instagram DM conversations and reply from the dashboard, inside Meta's 24-hour messaging window. Cached so it loads instantly on repeat visits.
-- DM logs. Every send, skip, and failure is logged with a reason.
-- Self-comment filtering. Your own comments never trigger a reply, since Meta rejects DMing yourself anyway.
+- Inbox. Read your Instagram DM conversations and reply from the app, inside Meta's 24-hour messaging window.
+- Activity log. Every send, skip, and failure is logged with a reason and filterable status.
+- Self-comment filtering. Your own comments never trigger a reply.
+- Optional billing. Self-hosted by default with no usage caps at all — set a few `STRIPE_*` env vars if you want to run this as a paid hosted product with Free/Starter/Agency plan tiers instead. See `lib/billing/plans.ts`.
 
 ## How it works
 
-1. Someone comments on your Instagram post or reel.
-2. Meta sends a webhook to your OpenReply instance.
-3. OpenReply checks the comment against your active campaigns.
+1. Someone comments on your Instagram post/reel, or messages your Telegram bot.
+2. Meta or Telegram sends a webhook to your AutoReply backend.
+3. The backend checks the message against your active campaigns.
 4. On a keyword match, it queues a job.
-5. A background worker sends the private reply, and the public reply if you enabled one.
+5. A background worker sends the private reply (and the public reply on Instagram, if enabled).
 
-The web app receives the webhook and serves the dashboard. A separate worker process does the sending, because the send has to survive rate limits and retries. Both talk to the same Postgres and Redis.
+The Next.js app receives the webhook and serves the API the mobile app calls — it has no dashboard, no login page, nothing a browser is meant to visit. A separate worker process does the sending, because it has to survive rate limits and retries. Both talk to the same Postgres and Redis.
 
 ## Quick start
 
-You need a few free accounts before anything works: a Meta developer app, a Resend account for login emails, and somewhere to host (Vercel for the web app, Railway for the worker plus Postgres and Redis). The Instagram account you connect has to be a Business or Creator account, not a personal one.
+You need a few free accounts before anything works: a Meta developer app (Instagram), and/or a Telegram bot from `@BotFather`, plus somewhere to host the backend and worker (Postgres + Redis required). Read [docs/setup.md](docs/setup.md) for the full walkthrough — the Meta app-review part is the slow part, Telegram has none of that.
 
-The honest version: the code deploys in minutes, but the Meta app setup is the part that takes real time. Read [docs/setup.md](docs/setup.md) before you start. It is the single setup guide, covering hosting, your domain, the environment, and every Meta wrong turn so you do not have to find them yourself.
-
-### Deploy the web app
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/diwenne/openreply)
-
-### Run it locally
+### Run the backend locally
 
 ```bash
-git clone https://github.com/diwenne/openreply.git
-cd openreply
+git clone https://github.com/Suhas-123-cell/AutoReply.git
+cd AutoReply
 npm install
 cp .env.example .env      # then fill in the values, see docs/setup.md
 docker-compose up -d      # starts Postgres and Redis
 npm run db:migrate
-npm run dev               # web app on http://localhost:3000
+npm run dev               # API on http://localhost:3000 (no pages to visit)
 npm run worker            # in a second terminal, this sends the DMs
 ```
 
-Two processes, always. `npm run dev` serves the app and receives webhooks. `npm run worker` is what actually sends the messages. If comments come in and no DM ever arrives, the worker is the first thing to check.
+Two processes, always. `npm run dev` receives webhooks and serves the API. `npm run worker` is what actually sends the messages. If comments come in and no DM ever arrives, the worker is the first thing to check.
+
+### Run the mobile app
+
+```bash
+cd mobile
+npm install
+cp .env.example .env      # set API_BASE_URL to your backend above
+npx react-native run-ios      # or run-android
+```
 
 Full environment variables and the production layout are in [docs/setup.md](docs/setup.md).
 
-## Set it up with your AI assistant
-
-If you use Claude Code, Cursor, or a similar tool, the Meta setup is a lot faster with an assistant driving it. There is a ready-made prompt in the [Set it up with an AI assistant](docs/setup.md#set-it-up-with-an-ai-assistant) section of the setup guide. Paste it into your assistant inside a clone of this repo, hand over your keys as it asks, and it will walk you through connecting Instagram and going live.
-
 ## Tech stack
 
-- Next.js 16 and React 19 for the web app and API routes
+- Next.js 16 and React 19 for the API-only backend
+- React Native 0.81 (bare workflow, no Expo) for iOS + Android
 - Prisma 7 with PostgreSQL
 - BullMQ on Redis for the send queue and the worker
-- Auth.js (NextAuth) with email magic links through Resend
-- Tailwind CSS for the interface
-- The official Instagram API with Instagram Login
+- Google Sign-In, Instagram OAuth, and email one-time codes for mobile sign-in
+- The official Instagram API (Instagram Login) and the Telegram Bot API
+- Stripe (optional) for the hosted-billing tier
 
-For the complete stack — application libraries, the two runtime processes, and the free services this runs on (Vercel, Neon, Redis Cloud, an Oracle Cloud always-free VM for the worker, Resend, Meta) — see [docs/stack.md](docs/stack.md).
+For the complete stack and the free services this can run on, see [docs/stack.md](docs/stack.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. If you hit a Meta quirk that is not in the setup guide, a PR that documents it is worth as much as a code fix, because that is where everyone loses time.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+Issues and pull requests are welcome. If you hit a Meta or Telegram quirk that isn't in the setup guide, a PR that documents it is worth as much as a code fix. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ## Credits
 
-Built and maintained by Diwen Huang.
-
-- GitHub: [@diwenne](https://github.com/diwenne)
-- Website: [diwenhuang.ca](https://diwenhuang.ca)
-- X: [@diwenne](https://x.com/diwenne)
-- Instagram: [@devdiwen](https://instagram.com/devdiwen)
-
-OpenReply is a fork of [instagram-comment-to-dm](https://github.com/im-anishraj/instagram-comment-to-dm) by [Anish Raj](https://github.com/im-anishraj), also MIT licensed. The billing layer and plan caps were removed, and the setup was documented from scratch.
-
-## Star the repo
-
-If OpenReply is useful to you, star it. It is the simplest way to help the project reach the next person looking for a free way to do this.
+AutoReply (originally OpenReply) is a fork of [instagram-comment-to-dm](https://github.com/im-anishraj/instagram-comment-to-dm) by [Anish Raj](https://github.com/im-anishraj), MIT licensed. This fork rebuilt it around a mobile app instead of a web dashboard, added Telegram support, per-account permissions, and campaign cloning for agencies, and made billing an optional opt-in layer rather than removing it outright.
 
 ## License
 
