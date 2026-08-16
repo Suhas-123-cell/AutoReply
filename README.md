@@ -51,7 +51,7 @@ The Next.js app receives the webhook and serves the API the mobile app calls —
 
 ## Quick start
 
-You need a few free accounts before anything works: a Meta developer app (Instagram), and/or a Telegram bot from `@BotFather`, plus somewhere to host the backend and worker (Postgres + Redis required). Read [docs/setup.md](docs/setup.md) for the full walkthrough — the Meta app-review part is the slow part, Telegram has none of that.
+You need a few free accounts before anything works: a Meta developer app (Instagram), and/or a Telegram bot from `@BotFather`, plus somewhere to host the backend and worker (Postgres + Redis required). Every variable, with comments on where to get it, is in [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example).
 
 ### Run the backend locally
 
@@ -59,7 +59,7 @@ You need a few free accounts before anything works: a Meta developer app (Instag
 git clone https://github.com/Suhas-123-cell/AutoReply.git
 cd AutoReply
 npm install
-cp .env.example .env      # then fill in the values, see docs/setup.md
+cp .env.example .env      # then fill in the values — see the comments in that file
 docker-compose up -d      # starts Postgres and Redis
 npm run db:migrate
 npm run dev               # API on http://localhost:3000 (no pages to visit)
@@ -77,7 +77,7 @@ cp .env.example .env      # set API_BASE_URL to your backend above
 npx react-native run-ios      # or run-android
 ```
 
-Full environment variables and the production layout are in [docs/setup.md](docs/setup.md).
+See [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example) for the full list of environment variables, with comments on where to get each one.
 
 ## Tech stack
 
@@ -89,7 +89,6 @@ Full environment variables and the production layout are in [docs/setup.md](docs
 - The official Instagram API (Instagram Login) and the Telegram Bot API
 - Stripe (optional) for the hosted-billing tier
 
-For the complete stack and the free services this can run on, see [docs/stack.md](docs/stack.md).
 
 ## Contributing
 
