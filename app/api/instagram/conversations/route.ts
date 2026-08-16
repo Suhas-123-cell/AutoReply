@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { getWorkspaceInstagramAccount } from "@/lib/instagram-accounts";
 import {
   getConversations,
@@ -7,6 +6,10 @@ import {
   MetaApiError,
 } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export interface ConversationListItem {
   id: string;
@@ -26,17 +29,19 @@ export interface ConversationsResponse {
 
 // List the account's DM conversations for the inbox.
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    request.nextUrl.searchParams.get("instagramAccountId")
+    context.workspaceId,
+    request.nextUrl.searchParams.get("instagramAccountId"),
+    instagramAccountIds
   );
   if (!account) {
     return NextResponse.json(
@@ -95,13 +100,14 @@ export async function GET(request: NextRequest) {
 
 // Send a direct message reply.
 export async function POST(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   let body: { instagramAccountId?: string; recipientId?: string; text?: string };
   try {
@@ -122,8 +128,9 @@ export async function POST(request: NextRequest) {
   }
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    body.instagramAccountId ?? null
+    context.workspaceId,
+    body.instagramAccountId ?? null,
+    instagramAccountIds
   );
   if (!account) {
     return NextResponse.json(

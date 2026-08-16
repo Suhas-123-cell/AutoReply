@@ -47,6 +47,9 @@ async function getMemberPayload(
             name: true,
           },
         },
+        accountAccess: {
+          select: { instagramAccountId: true, telegramAccountId: true },
+        },
       },
     }),
     prisma.workspaceInvitation.findMany({

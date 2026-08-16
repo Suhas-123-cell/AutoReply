@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export const runtime = "nodejs";
 
@@ -11,16 +14,21 @@ export const runtime = "nodejs";
  * (e.g. the inbox) should use this so they aren't gated on heavy stats.
  */
 export async function GET() {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
 
+  const { instagramAccountIds } = await getAccountAccessScope(context);
+
   const instagramAccounts = await prisma.instagramAccount.findMany({
-    where: { workspaceId },
+    where: {
+      workspaceId: context.workspaceId,
+      ...(instagramAccountIds ? { id: { in: [...instagramAccountIds] } } : {}),
+    },
     orderBy: { connectedAt: "desc" },
     select: { id: true, username: true, instagramId: true, name: true },
   });

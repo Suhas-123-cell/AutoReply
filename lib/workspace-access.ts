@@ -31,6 +31,58 @@ export function canManageBilling(role: WorkspaceRole) {
   return role === "OWNER";
 }
 
+export type AccountAccessScope = {
+  // null = unrestricted (sees every account in the workspace). A non-null
+  // Set means "only these IDs" — including an empty Set, which happens if
+  // an owner scopes a member to zero accounts (locks them out entirely,
+  // a valid state, not the same as "never scoped").
+  instagramAccountIds: Set<string> | null;
+  telegramAccountIds: Set<string> | null;
+};
+
+/**
+ * Owners and admins always see every client account — scoping only ever
+ * restricts a MEMBER, never grants extra reach to a manager role. A MEMBER
+ * with zero MemberAccountAccess rows is unrestricted too (the default for
+ * every member until an owner/admin explicitly assigns accounts), so this
+ * feature is opt-in and doesn't change behavior for existing workspaces.
+ */
+export async function getAccountAccessScope(
+  context: WorkspaceContext
+): Promise<AccountAccessScope> {
+  if (context.role !== "MEMBER") {
+    return { instagramAccountIds: null, telegramAccountIds: null };
+  }
+
+  const membership = await prisma.workspaceMember.findUnique({
+    where: {
+      workspaceId_userId: {
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+      },
+    },
+    select: {
+      accountAccess: {
+        select: { instagramAccountId: true, telegramAccountId: true },
+      },
+    },
+  });
+
+  const rows = membership?.accountAccess ?? [];
+  if (rows.length === 0) {
+    return { instagramAccountIds: null, telegramAccountIds: null };
+  }
+
+  return {
+    instagramAccountIds: new Set(
+      rows.flatMap((r) => (r.instagramAccountId ? [r.instagramAccountId] : []))
+    ),
+    telegramAccountIds: new Set(
+      rows.flatMap((r) => (r.telegramAccountId ? [r.telegramAccountId] : []))
+    ),
+  };
+}
+
 export async function getCurrentWorkspaceContext(): Promise<WorkspaceContext | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;

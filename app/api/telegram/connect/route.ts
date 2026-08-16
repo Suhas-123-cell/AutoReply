@@ -12,6 +12,7 @@ import {
 } from "@/lib/telegram/client";
 import {
   canManageWorkspace,
+  getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
 
@@ -29,8 +30,13 @@ export async function GET() {
     );
   }
 
+  const { telegramAccountIds } = await getAccountAccessScope(context);
+
   const accounts = await prisma.telegramAccount.findMany({
-    where: { workspaceId: context.workspaceId },
+    where: {
+      workspaceId: context.workspaceId,
+      ...(telegramAccountIds ? { id: { in: [...telegramAccountIds] } } : {}),
+    },
     select: {
       id: true,
       botId: true,

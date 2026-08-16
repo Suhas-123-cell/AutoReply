@@ -1,21 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { getWorkspaceInstagramAccount } from "@/lib/instagram-accounts";
-import { getAllUserMedia, getUserMedia } from "@/lib/meta/client";
+import { getAllUserMedia, getUserMedia, MetaApiError } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    request.nextUrl.searchParams.get("instagramAccountId")
+    context.workspaceId,
+    request.nextUrl.searchParams.get("instagramAccountId"),
+    instagramAccountIds
   );
 
   if (!account) {
@@ -49,9 +54,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: posts });
   } catch (err) {
     console.error("[Instagram Posts] Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch Instagram posts" },
-      { status: 500 }
-    );
+    // Surface Meta's own message when it has one — "the token expired" and
+    // "your app hit the rate limit" need different fixes from the user's
+    // side, and a generic message hides which one this is.
+    const message =
+      err instanceof MetaApiError ? err.message : "Failed to fetch Instagram posts";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

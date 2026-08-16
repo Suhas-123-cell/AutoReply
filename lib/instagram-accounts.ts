@@ -25,18 +25,31 @@ export async function canConnectInstagramAccount({
   };
 }
 
+/**
+ * @param allowedAccountIds Pass a scoped MEMBER's account-access set (from
+ *   getAccountAccessScope) to keep this from resolving to an account outside
+ *   it — an explicit out-of-scope ID or an unscoped "pick any" both come back
+ *   null, same as "not connected", rather than leaking another client's data.
+ */
 export async function getWorkspaceInstagramAccount(
   workspaceId: string,
-  instagramAccountId?: string | null
+  instagramAccountId?: string | null,
+  allowedAccountIds?: Set<string> | null
 ) {
   if (instagramAccountId && instagramAccountId !== "all") {
+    if (allowedAccountIds && !allowedAccountIds.has(instagramAccountId)) {
+      return null;
+    }
     return prisma.instagramAccount.findFirst({
       where: { id: instagramAccountId, workspaceId },
     });
   }
 
   return prisma.instagramAccount.findFirst({
-    where: { workspaceId },
+    where: {
+      workspaceId,
+      ...(allowedAccountIds ? { id: { in: [...allowedAccountIds] } } : {}),
+    },
     orderBy: { connectedAt: "desc" },
   });
 }
