@@ -12,7 +12,7 @@ export const authConfig = {
   providers: [
     Resend({
       apiKey: process.env.RESEND_API_KEY ?? "missing-resend-api-key",
-      from: process.env.EMAIL_FROM ?? "OpenReply <login@example.com>",
+      from: process.env.EMAIL_FROM ?? "AutoReply <login@example.com>",
     }),
   ],
   callbacks: {

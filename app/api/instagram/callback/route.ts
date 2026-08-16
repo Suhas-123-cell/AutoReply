@@ -10,6 +10,8 @@ import {
   verifyOAuthState,
 } from "@/lib/meta/oauth";
 import { canManageWorkspace } from "@/lib/workspace-access";
+import { issueInstagramSignupExchangeCode } from "@/lib/auth/instagram-signup-exchange";
+import { ensureWorkspaceForUser } from "@/lib/workspace";
 
 // Every possible outcome of this route, and where the *web* app sends the
 // user for it. Extracted so a unit test can assert these targets never
@@ -44,13 +46,20 @@ export function webPathFor(status: OutcomeStatus, reason?: string): string {
   }
 }
 
-// The mobile app registers this custom scheme (see mobile/app.config.ts) and
-// expo-web-browser's openAuthSessionAsync intercepts it, so Meta's redirect
-// never actually loads in a visible browser tab on mobile.
-function mobileDeepLinkFor(status: OutcomeStatus, reason?: string): string {
+// The mobile app registers this custom scheme (see mobile/android/.../AndroidManifest.xml
+// and mobile/ios/.../Info.plist) and react-native-inappbrowser-reborn's
+// openAuth intercepts it, so Meta's redirect never actually loads in a
+// visible browser tab on mobile. `code` is only ever present for the
+// mobile-signup flow — see issueInstagramSignupExchangeCode's docstring for
+// why a real session token never travels through this URL.
+function mobileDeepLinkFor(
+  status: OutcomeStatus,
+  opts?: { reason?: string; code?: string }
+): string {
   const params = new URLSearchParams({ status });
-  if (reason) params.set("reason", reason.slice(0, 200));
-  return `openreply://ig-connect?${params.toString()}`;
+  if (opts?.reason) params.set("reason", opts.reason.slice(0, 200));
+  if (opts?.code) params.set("code", opts.code);
+  return `autoreply://ig-connect?${params.toString()}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -58,13 +67,17 @@ export async function GET(request: NextRequest) {
   const error = request.nextUrl.searchParams.get("error");
   const state = verifyOAuthState(request.nextUrl.searchParams.get("state"));
   const baseUrl = getBaseUrl();
-  const isMobile = state?.client === "mobile";
+  const isMobile = state?.client === "mobile" || state?.client === "mobile-signup";
+  const isSignup = state?.client === "mobile-signup";
 
-  const finish = (status: OutcomeStatus, reason?: string) =>
+  const finish = (
+    status: OutcomeStatus,
+    opts?: { reason?: string; exchangeCode?: string }
+  ) =>
     NextResponse.redirect(
       isMobile
-        ? mobileDeepLinkFor(status, reason)
-        : `${baseUrl}${webPathFor(status, reason)}`
+        ? mobileDeepLinkFor(status, { reason: opts?.reason, code: opts?.exchangeCode })
+        : `${baseUrl}${webPathFor(status, opts?.reason)}`
     );
 
   if (error) {
@@ -74,6 +87,93 @@ export async function GET(request: NextRequest) {
   if (!code || !state) {
     return finish("invalid");
   }
+
+  // "Sign in with Instagram" has no existing user/workspace to authorize
+  // against — identity comes entirely from the OAuth round trip below, so it
+  // skips straight past the acting-user/membership checks that every other
+  // flow needs.
+  if (isSignup) {
+    try {
+      const redirectUri = `${baseUrl}/api/instagram/callback`;
+      const { accessToken: shortLivedToken } = await exchangeCodeForToken(
+        code,
+        redirectUri
+      );
+      const { accessToken: longLivedToken, expiresIn } =
+        await getLongLivedToken(shortLivedToken);
+      const userInfo = await getUserInfo(longLivedToken);
+      const instagramId = userInfo.user_id ?? userInfo.id;
+      const encryptedToken = encryptToken(longLivedToken);
+      const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
+
+      let webhookSubscribed = false;
+      try {
+        const subscription = await subscribeInstagramAccountToWebhooks(
+          instagramId,
+          longLivedToken
+        );
+        webhookSubscribed = Boolean(subscription.success);
+      } catch (subscriptionError) {
+        console.warn(
+          "[Instagram Callback] Webhook subscription failed:",
+          subscriptionError
+        );
+      }
+
+      const existingAccount = await prisma.instagramAccount.findUnique({
+        where: { instagramId },
+        include: { workspace: true },
+      });
+
+      let signedInUserId: string;
+
+      if (existingAccount) {
+        // This Instagram identity is already connected somewhere — sign the
+        // workspace owner back in rather than creating a duplicate account.
+        signedInUserId = existingAccount.workspace.ownerId;
+        await prisma.instagramAccount.update({
+          where: { instagramId },
+          data: { accessToken: encryptedToken, tokenExpiresAt, webhookSubscribed },
+        });
+      } else {
+        // True first-time sign-up: Instagram's Business Login API never
+        // returns an email, so the new user has none — matches User.email's
+        // existing nullable design (see provisionUserByPhone for the same
+        // pattern with phone-only accounts).
+        const user = await prisma.user.create({
+          data: { name: userInfo.name ?? userInfo.username },
+        });
+        const workspace = await ensureWorkspaceForUser(user.id, null);
+        await prisma.instagramAccount.create({
+          data: {
+            workspaceId: workspace.id,
+            instagramId,
+            username: userInfo.username,
+            name: userInfo.name,
+            accessToken: encryptedToken,
+            tokenExpiresAt,
+            webhookSubscribed,
+          },
+        });
+        signedInUserId = user.id;
+      }
+
+      const exchangeCode = await issueInstagramSignupExchangeCode(signedInUserId);
+      return finish("connected", { exchangeCode });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[Instagram Callback] Signup error:", err);
+      return finish("failed", { reason: message });
+    }
+  }
+
+  // Every non-signup flow's state carries a workspaceId (enforced by
+  // verifyOAuthState) — this just narrows the type for TypeScript, since
+  // OAuthStatePayload.workspaceId is optional to accommodate mobile-signup.
+  if (!state.workspaceId) {
+    return finish("invalid");
+  }
+  const workspaceId = state.workspaceId;
 
   // Web identifies the acting user from the session cookie. Mobile has no
   // cookie inside its in-app auth browser, so its identity travels in the
@@ -92,7 +192,7 @@ export async function GET(request: NextRequest) {
 
   const membership = await prisma.workspaceMember.findFirst({
     where: {
-      workspaceId: state.workspaceId,
+      workspaceId: workspaceId,
       userId: actingUserId,
     },
   });
@@ -116,7 +216,7 @@ export async function GET(request: NextRequest) {
     // ever absent.
     const instagramId = userInfo.user_id ?? userInfo.id;
     const connection = await canConnectInstagramAccount({
-      workspaceId: state.workspaceId,
+      workspaceId: workspaceId,
       instagramId,
     });
 
@@ -144,7 +244,7 @@ export async function GET(request: NextRequest) {
     await prisma.instagramAccount.upsert({
       where: { instagramId },
       create: {
-        workspaceId: state.workspaceId,
+        workspaceId: workspaceId,
         instagramId,
         username: userInfo.username,
         name: userInfo.name,
@@ -153,7 +253,7 @@ export async function GET(request: NextRequest) {
         webhookSubscribed,
       },
       update: {
-        workspaceId: state.workspaceId,
+        workspaceId: workspaceId,
         username: userInfo.username,
         name: userInfo.name,
         accessToken: encryptedToken,
@@ -174,13 +274,13 @@ export async function GET(request: NextRequest) {
         data: {
           source: "SYSTEM",
           level: "ERROR",
-          workspaceId: state.workspaceId,
+          workspaceId: workspaceId,
           message: "Instagram connection failed",
           payload: { reason: message },
         },
       })
       .catch(() => {});
 
-    return finish("failed", message);
+    return finish("failed", { reason: message });
   }
 }

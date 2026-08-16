@@ -14,6 +14,10 @@ model User {
   name          String?
   email         String?   @unique
   emailVerified DateTime?
+  // E.164 format (e.g. +14155551234). Nullable + unique, same pattern as
+  // email: a user may sign up via Google or Instagram and never set a phone.
+  phone         String?   @unique
+  phoneVerified DateTime?
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -24,6 +28,25 @@ model User {
   workspaceMembers  WorkspaceMember[]
   sentInvitations   WorkspaceInvitation[] @relation("WorkspaceInvitationsSent")
   pushDevices       PushDevice[]
+}
+
+// Phone-number OTP codes for the mobile app's sign-in flow. Mirrors
+// MobileAuthCode (see lib/auth/mobile-codes.ts's docstring for why this is
+// its own table rather than reusing Auth.js's VerificationToken) — same
+// reasoning applies here: a 6-digit code needs its own throttled, single-use
+// table, not a shared one validated by an unrelated unthrottled callback.
+model MobilePhoneAuthCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  requestIp  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
 }
 
 model Account {

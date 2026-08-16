@@ -58,3 +58,19 @@ export async function allowCodeRequest(
 export async function allowCodeVerifyAttempt(email: string): Promise<boolean> {
   return checkAndIncrement(`otp:verify:e:${hashKeyPart(email)}`, 10, 900);
 }
+
+// Generic per-IP limiter for auth endpoints that have no natural per-identifier
+// key to rate limit on up front (Google/Instagram sign-in don't have a
+// phone/email to throttle against before the expensive verification step
+// runs). Unlike allowCodeRequest's IP check, this is the *only* limiter for
+// these routes — so a missing IP fails closed, matching this file's stated
+// fail-closed stance, instead of allowing unlimited requests.
+export async function allowAuthAttemptByIp(
+  scope: string,
+  ip: string | null,
+  max: number,
+  windowSeconds: number
+): Promise<boolean> {
+  if (!ip) return false;
+  return checkAndIncrement(`auth:${scope}:ip:${hashKeyPart(ip)}`, max, windowSeconds);
+}
