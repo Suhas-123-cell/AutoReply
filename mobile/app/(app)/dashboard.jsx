@@ -1,4 +1,5 @@
 import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../src/api/client";
 import Card from "../../src/ui/Card";
@@ -9,6 +10,7 @@ import StatusBadge from "../../src/ui/StatusBadge";
 import { colors } from "../../src/ui/tokens";
 
 export default function DashboardScreen() {
+  const insets = useSafeAreaInsets();
   const {
     data: stats,
     isLoading,
@@ -25,7 +27,7 @@ export default function DashboardScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 gap-3 bg-background p-4">
+      <View className="flex-1 gap-3 bg-background p-4" style={{ paddingTop: insets.top + 16 }}>
         <Skeleton className="h-8 w-40" />
         <View className="flex-row flex-wrap gap-3">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -40,7 +42,7 @@ export default function DashboardScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 16, gap: 16 }}
+      contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16, gap: 16 }}
       refreshControl={
         <RefreshControl refreshing={isFetching} onRefresh={refetch} tintColor={colors.accent} />
       }

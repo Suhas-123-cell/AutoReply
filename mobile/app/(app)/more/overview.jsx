@@ -64,6 +64,10 @@ export default function OverviewScreen() {
     queryFn: () =>
       apiFetch(`/api/instagram/overview?count=${count}`, { timeoutMs: OVERVIEW_TIMEOUT_MS }),
     staleTime: 10 * 60 * 1000,
+    // A 400 here means "no Instagram account connected" — retrying with
+    // backoff just delays the error message for several seconds for a
+    // request that can never succeed. Pull-to-refresh covers manual retry.
+    retry: false,
   });
 
   const totals = data?.totals;

@@ -154,9 +154,11 @@ export default function MembersScreen() {
                 <Text className="text-sm text-foreground" numberOfLines={1}>
                   {member.user.name ?? member.user.email ?? "Unknown member"}
                 </Text>
-                <Text className="text-xs text-muted" numberOfLines={1}>
-                  {member.user.email}
-                </Text>
+                {member.user.name && member.user.email ? (
+                  <Text className="text-xs text-muted" numberOfLines={1}>
+                    {member.user.email}
+                  </Text>
+                ) : null}
               </View>
               <View className="flex-row items-center gap-3">
                 {canManage && !isOwner ? (
