@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { canManageBilling, getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { isBillingConfigured } from "@/lib/billing/plans";
 import { getStripeClient } from "@/lib/billing/stripe";
@@ -37,10 +38,21 @@ export async function POST() {
   }
 
   const stripe = getStripeClient();
-  const session = await stripe.billingPortal.sessions.create({
-    customer: context.workspace.stripeCustomerId,
-    return_url: "autoreply://billing",
-  });
-
-  return NextResponse.json({ success: true, data: { url: session.url } });
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: context.workspace.stripeCustomerId,
+      return_url: "autoreply://billing",
+    });
+    return NextResponse.json({ success: true, data: { url: session.url } });
+  } catch (err) {
+    const message =
+      err instanceof Stripe.errors.StripeError
+        ? err.message
+        : "Could not reach Stripe";
+    console.error("[Billing Portal] Stripe request failed:", err);
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 502 }
+    );
+  }
 }

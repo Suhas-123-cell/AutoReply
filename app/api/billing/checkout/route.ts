@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import Stripe from "stripe";
 import { prisma } from "@/lib/db/client";
 import { canManageBilling, getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { getPlan, isBillingConfigured, isPlanId, PAID_PLAN_IDS } from "@/lib/billing/plans";
@@ -53,33 +54,46 @@ export async function POST(request: NextRequest) {
 
   const stripe = getStripeClient();
 
-  let customerId = context.workspace.stripeCustomerId;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      metadata: { workspaceId: context.workspaceId },
-    });
-    customerId = customer.id;
-    await prisma.workspace.update({
-      where: { id: context.workspaceId },
-      data: { stripeCustomerId: customerId },
-    });
-  }
+  let session: Stripe.Checkout.Session;
+  try {
+    let customerId = context.workspace.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        metadata: { workspaceId: context.workspaceId },
+      });
+      customerId = customer.id;
+      await prisma.workspace.update({
+        where: { id: context.workspaceId },
+        data: { stripeCustomerId: customerId },
+      });
+    }
 
-  // Redirects straight to the app's deep-link scheme, same pattern as the
-  // Instagram OAuth callback (mobileDeepLinkFor in
-  // app/api/instagram/callback/route.ts) — InAppBrowser.openAuth on the
-  // mobile side closes itself once it sees an autoreply:// redirect. The
-  // real plan change lands via the webhook, not this redirect; this URL is
-  // only UX, telling the app to refetch billing status.
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: getStripePriceId(plan.stripePriceEnvVar), quantity: 1 }],
-    success_url: "autoreply://billing?status=success",
-    cancel_url: "autoreply://billing?status=canceled",
-    metadata: { workspaceId: context.workspaceId },
-    subscription_data: { metadata: { workspaceId: context.workspaceId } },
-  });
+    // Redirects straight to the app's deep-link scheme, same pattern as the
+    // Instagram OAuth callback (mobileDeepLinkFor in
+    // app/api/instagram/callback/route.ts) — InAppBrowser.openAuth on the
+    // mobile side closes itself once it sees an autoreply:// redirect. The
+    // real plan change lands via the webhook, not this redirect; this URL
+    // is only UX, telling the app to refetch billing status.
+    session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: getStripePriceId(plan.stripePriceEnvVar), quantity: 1 }],
+      success_url: "autoreply://billing?status=success",
+      cancel_url: "autoreply://billing?status=canceled",
+      metadata: { workspaceId: context.workspaceId },
+      subscription_data: { metadata: { workspaceId: context.workspaceId } },
+    });
+  } catch (err) {
+    const message =
+      err instanceof Stripe.errors.StripeError
+        ? err.message
+        : "Could not reach Stripe";
+    console.error("[Billing Checkout] Stripe request failed:", err);
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 502 }
+    );
+  }
 
   if (!session.url) {
     return NextResponse.json(
