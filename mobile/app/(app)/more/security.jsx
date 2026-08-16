@@ -59,7 +59,7 @@ export default function SecurityScreen() {
             <Text className="text-sm font-medium text-foreground">App lock</Text>
             <Text className="mt-0.5 text-xs text-muted">
               {available
-                ? "Require Face ID / Touch ID after OpenReply has been in the background for a while."
+                ? "Require Face ID / Touch ID after AutoReply has been in the background for a while."
                 : "No Face ID / Touch ID / fingerprint is set up on this device."}
             </Text>
           </View>

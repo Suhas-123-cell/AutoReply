@@ -16,7 +16,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   ex.autolinkLibrariesFromCommand()
 }
 
-rootProject.name = 'OpenReply'
+rootProject.name = 'AutoReply'
 
 include ':app'
 

@@ -18,7 +18,7 @@ const Stack = createNativeStackNavigator();
  *
  * IgConnect is registered here unconditionally (a sibling of the
  * AppTabs/AuthStack screen, not nested inside either) because it's the
- * openreply://ig-connect OAuth-callback deep-link landing screen and must
+ * autoreply://ig-connect OAuth-callback deep-link landing screen and must
  * stay reachable regardless of sign-in state.
  */
 export default function RootNavigator() {
