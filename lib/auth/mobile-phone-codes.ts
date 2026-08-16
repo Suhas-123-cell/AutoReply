@@ -48,19 +48,9 @@ export async function issueMobilePhoneAuthCode(
     }),
   ]);
 
-  // Same non-blocking-send contract as the email flow: a Twilio outage (or
-  // no credentials configured locally) must not prevent the code from being
-  // returned to the caller, since MOBILE_OTP_DEV_ECHO depends on it.
-  try {
-    const { sendSms } = await import("@/lib/sms/send");
-    await sendSms({
-      to: phone,
-      body: `${code} is your AutoReply sign-in code. Expires in 10 minutes.`,
-    });
-  } catch (error) {
-    console.error("[Mobile Phone OTP] Failed to send code SMS:", error);
-  }
-
+  // No SMS provider is wired up — the phone sign-in UI was already removed
+  // (see mobile/app/(auth)/sign-in.jsx), so this code is only ever read via
+  // MOBILE_OTP_DEV_ECHO, ie the API response below, not a real text message.
   return { code };
 }
 
