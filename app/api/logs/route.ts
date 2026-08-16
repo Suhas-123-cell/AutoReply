@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { DmStatus } from "@/app/generated/prisma/client";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const workspaceId = context.workspaceId;
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
 
   const searchParams = request.nextUrl.searchParams;
   const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10));
@@ -26,12 +32,17 @@ export async function GET(request: NextRequest) {
       ? (status as DmStatus)
       : null;
 
+  const requestedAccountFilter =
+    instagramAccountId && instagramAccountId !== "all"
+      ? { instagramAccountId }
+      : allowedAccountIds
+        ? { instagramAccountId: { in: [...allowedAccountIds] } }
+        : {};
+
   const where = {
     workspaceId,
     ...(parsedStatus ? { status: parsedStatus } : {}),
-    ...(instagramAccountId && instagramAccountId !== "all"
-      ? { instagramAccountId }
-      : {}),
+    ...requestedAccountFilter,
   };
 
   const [logs, total] = await Promise.all([

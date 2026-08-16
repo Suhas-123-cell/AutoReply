@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { getWorkspaceInstagramAccount } from "@/lib/instagram-accounts";
 import { getConversationMessages, MetaApiError } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export interface ThreadMessage {
   id: string;
@@ -20,19 +23,21 @@ type RouteProps = { params: Promise<{ id: string }> };
 
 // Message history for a single conversation (20 most recent, chronological).
 export async function GET(request: NextRequest, { params }: RouteProps) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   const { id: conversationId } = await params;
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    request.nextUrl.searchParams.get("instagramAccountId")
+    context.workspaceId,
+    request.nextUrl.searchParams.get("instagramAccountId"),
+    instagramAccountIds
   );
   if (!account) {
     return NextResponse.json(

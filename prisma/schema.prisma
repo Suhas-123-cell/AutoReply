@@ -122,11 +122,37 @@ model WorkspaceMember {
   role        WorkspaceRole @default(OWNER)
   createdAt   DateTime      @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountAccess MemberAccountAccess[]
 
   @@unique([workspaceId, userId])
   @@index([userId])
+}
+
+// Restricts a MEMBER-role WorkspaceMember to specific client accounts — the
+// per-sub-account permission gap from the agency-console brief (an agency
+// staffer assigned to one client shouldn't see every other client's
+// campaigns/DMs). No rows for a member means unrestricted (sees every
+// account in the workspace) — this is the default, so adding this feature
+// doesn't change behavior for any existing member until an owner/admin
+// explicitly scopes one. Each row grants access to exactly one account,
+// Instagram or Telegram (never both — enforced at the application layer,
+// not worth a CHECK constraint for two nullable columns).
+model MemberAccountAccess {
+  id                 String   @id @default(cuid())
+  workspaceMemberId  String
+  instagramAccountId String?
+  telegramAccountId  String?
+  createdAt          DateTime @default(now())
+
+  workspaceMember  WorkspaceMember   @relation(fields: [workspaceMemberId], references: [id], onDelete: Cascade)
+  instagramAccount InstagramAccount? @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  telegramAccount  TelegramAccount?  @relation(fields: [telegramAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceMemberId, instagramAccountId])
+  @@unique([workspaceMemberId, telegramAccountId])
+  @@index([workspaceMemberId])
 }
 
 model WorkspaceInvitation {
@@ -168,6 +194,7 @@ model InstagramAccount {
   dmLogs      DmLog[]
   linkClicks  LinkClick[]
   followerSnapshots FollowerSnapshot[]
+  memberAccess MemberAccountAccess[]
 
   @@index([workspaceId])
 }
@@ -470,6 +497,7 @@ model TelegramAccount {
   workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   automations  TelegramAutomation[]
   messageLogs  TelegramMessageLog[]
+  memberAccess MemberAccountAccess[]
 
   @@index([workspaceId])
 }

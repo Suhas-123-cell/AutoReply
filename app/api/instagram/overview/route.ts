@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { getWorkspaceInstagramAccount } from "@/lib/instagram-accounts";
 import {
   getAllUserMedia,
   getMediaInsights,
+  MetaApiError,
   PermissionError,
   type InstagramMedia,
 } from "@/lib/meta/client";
@@ -14,6 +14,10 @@ import {
   getFollowerHistory,
   type FollowerHistoryPoint,
 } from "@/lib/reports/follower-history";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 // Allow time for paginated media + per-post insight calls on larger accounts.
 export const maxDuration = 60;
@@ -97,17 +101,19 @@ function isVideoLike(media: InstagramMedia): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    request.nextUrl.searchParams.get("instagramAccountId")
+    context.workspaceId,
+    request.nextUrl.searchParams.get("instagramAccountId"),
+    instagramAccountIds
   );
 
   if (!account) {
@@ -211,7 +217,10 @@ export async function GET(request: NextRequest) {
     );
 
     const accounts = await prisma.instagramAccount.findMany({
-      where: { workspaceId },
+      where: {
+        workspaceId: context.workspaceId,
+        ...(instagramAccountIds ? { id: { in: [...instagramAccountIds] } } : {}),
+      },
       orderBy: { connectedAt: "desc" },
       select: { id: true, username: true },
     });
@@ -249,9 +258,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data });
   } catch (err) {
     console.error("[Instagram Overview] Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Failed to load Instagram overview" },
-      { status: 500 }
-    );
+    const message =
+      err instanceof MetaApiError ? err.message : "Failed to load Instagram overview";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

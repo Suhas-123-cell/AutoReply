@@ -1,24 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { getWorkspaceInstagramAccount } from "@/lib/instagram-accounts";
-import { getUserInfo } from "@/lib/meta/client";
+import { getUserInfo, MetaApiError } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export const dynamic = "force-dynamic";
 
 // Live profile lookup (username + avatar) for the campaign preview.
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const { instagramAccountIds } = await getAccountAccessScope(context);
 
   const account = await getWorkspaceInstagramAccount(
-    workspaceId,
-    request.nextUrl.searchParams.get("instagramAccountId")
+    context.workspaceId,
+    request.nextUrl.searchParams.get("instagramAccountId"),
+    instagramAccountIds
   );
   if (!account) {
     return NextResponse.json(
@@ -43,9 +48,8 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     console.error("[Instagram Profile] Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Failed to load profile" },
-      { status: 500 }
-    );
+    const message =
+      err instanceof MetaApiError ? err.message : "Failed to load profile";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

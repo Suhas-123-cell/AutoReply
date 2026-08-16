@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentWorkspaceId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { logAuditEvent } from "@/lib/audit";
 import { calculateCtr, normalizeTopKeywords } from "@/lib/tracking/analytics";
@@ -9,6 +8,7 @@ import { generateTrackedLinkSlug } from "@/lib/tracking/server";
 import { buildReportUrl, generateReportShareSlug } from "@/lib/reports/share";
 import {
   canManageWorkspace,
+  getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
 
@@ -117,19 +117,25 @@ const updateAutomationSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const workspaceId = context.workspaceId;
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
+
   const instagramAccountId =
     request.nextUrl.searchParams.get("instagramAccountId");
   const accountFilter =
     instagramAccountId && instagramAccountId !== "all"
       ? { instagramAccountId }
-      : {};
+      : allowedAccountIds
+        ? { instagramAccountId: { in: [...allowedAccountIds] } }
+        : {};
 
   const automations = await prisma.automation.findMany({
     where: { workspaceId, ...accountFilter },

@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUserId, getCurrentWorkspaceId } from "@/lib/auth";
+import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import {
   calculateCtr,
   normalizeTopKeywords,
   summarizeDmStatuses,
 } from "@/lib/tracking/analytics";
+import {
+  getAccountAccessScope,
+  getCurrentWorkspaceContext,
+} from "@/lib/workspace-access";
 
 export async function GET(request: NextRequest) {
-  const workspaceId = await getCurrentWorkspaceId();
-  if (!workspaceId) {
+  const context = await getCurrentWorkspaceContext();
+  if (!context) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
   }
+  const workspaceId = context.workspaceId;
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
 
   const userId = await getCurrentUserId();
 
@@ -29,9 +36,18 @@ export async function GET(request: NextRequest) {
     requestedInstagramAccountId && requestedInstagramAccountId !== "all"
       ? requestedInstagramAccountId
       : null;
-  const accountFilter = selectedAccountId
-    ? { instagramAccountId: selectedAccountId }
-    : {};
+  // A scoped member's explicit ?instagramAccountId= pick still has to land
+  // inside their allowed set — otherwise fall back to "all allowed accounts"
+  // rather than leaking an out-of-scope account's stats.
+  const inScopeSelectedAccountId =
+    selectedAccountId && (!allowedAccountIds || allowedAccountIds.has(selectedAccountId))
+      ? selectedAccountId
+      : null;
+  const accountFilter = inScopeSelectedAccountId
+    ? { instagramAccountId: inScopeSelectedAccountId }
+    : allowedAccountIds
+      ? { instagramAccountId: { in: [...allowedAccountIds] } }
+      : {};
 
   const [
     workspace,
@@ -59,7 +75,10 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.instagramAccount.findFirst({
-      where: { workspaceId },
+      where: {
+        workspaceId,
+        ...(allowedAccountIds ? { id: { in: [...allowedAccountIds] } } : {}),
+      },
       orderBy: { connectedAt: "desc" },
       select: {
         id: true,
@@ -70,7 +89,10 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.instagramAccount.findMany({
-      where: { workspaceId },
+      where: {
+        workspaceId,
+        ...(allowedAccountIds ? { id: { in: [...allowedAccountIds] } } : {}),
+      },
       orderBy: { connectedAt: "desc" },
       select: {
         id: true,

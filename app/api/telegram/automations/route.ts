@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import {
   canManageWorkspace,
+  getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
 
@@ -18,6 +19,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const { telegramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
+
   const telegramAccountId = request.nextUrl.searchParams.get(
     "telegramAccountId"
   );
@@ -25,7 +29,11 @@ export async function GET(request: NextRequest) {
   const automations = await prisma.telegramAutomation.findMany({
     where: {
       workspaceId: context.workspaceId,
-      ...(telegramAccountId ? { telegramAccountId } : {}),
+      ...(telegramAccountId
+        ? { telegramAccountId }
+        : allowedAccountIds
+          ? { telegramAccountId: { in: [...allowedAccountIds] } }
+          : {}),
     },
     include: { telegramAccount: { select: { botUsername: true } } },
     orderBy: { createdAt: "desc" },
