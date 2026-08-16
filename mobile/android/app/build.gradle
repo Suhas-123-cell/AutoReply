@@ -3,6 +3,13 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+// Required for react-native-config to inject .env values into BuildConfig/
+// resources on Android — was missing entirely, meaning Config.API_BASE_URL
+// (mobile/src/api/client.js) has been resolving to an empty string on every
+// Android build regardless of what mobile/.env contained. This is what
+// "Network request failed" actually was — not the 10.0.2.2/adb-reverse
+// network path, which was a real but secondary issue.
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
@@ -84,9 +91,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.openreply.app'
+    namespace 'com.autoreply.app'
     defaultConfig {
-        applicationId 'com.openreply.app'
+        applicationId 'com.autoreply.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

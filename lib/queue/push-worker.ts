@@ -76,7 +76,7 @@ async function processPush(job: Job<PushQueueJob>): Promise<void> {
     const count = countRaw ? Number.parseInt(countRaw, 10) : 0;
     if (count === 0) return;
 
-    title = "OpenReply";
+    title = "AutoReply";
     body = `${count} ${DIGEST_LABEL[data.kind]} in the last 10 minutes`;
     payloadData = { kind: data.kind };
   }

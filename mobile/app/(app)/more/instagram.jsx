@@ -30,7 +30,7 @@ export default function InstagramSettingsScreen() {
   });
 
   // openAuthSessionAsync resolves once the in-app browser redirects back to
-  // openreply://ig-connect (handled by app/ig-connect.jsx), whether that's a
+  // autoreply://ig-connect (handled by app/ig-connect.jsx), whether that's a
   // success, denial, or failure — either way, refetch so the list reflects
   // whatever actually happened server-side.
   const handleConnect = async () => {
@@ -38,7 +38,7 @@ export default function InstagramSettingsScreen() {
     try {
       const { authorizeUrl } = await apiFetch("/api/mobile/instagram/connect");
       if (await InAppBrowser.isAvailable()) {
-        await InAppBrowser.openAuth(authorizeUrl, "openreply://ig-connect", {
+        await InAppBrowser.openAuth(authorizeUrl, "autoreply://ig-connect", {
           ephemeralWebSession: false,
         });
       } else {
