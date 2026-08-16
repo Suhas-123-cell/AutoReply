@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../src/api/client";
 import EmptyState from "../../src/ui/EmptyState";
@@ -20,6 +21,7 @@ const STATUS_FILTERS = [
 const PAGE_SIZE = 20;
 
 export default function ActivityScreen() {
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState(null);
 
   const {
@@ -67,7 +69,7 @@ export default function ActivityScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="border-b border-border">
+      <View className="border-b border-border" style={{ paddingTop: insets.top }}>
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
