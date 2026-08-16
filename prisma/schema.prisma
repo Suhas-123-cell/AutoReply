@@ -99,6 +99,19 @@ model Workspace {
   usagePeriodStart  DateTime @default(now())
   dmsSentThisPeriod Int      @default(0)
 
+  // Billing is opt-in: these fields exist regardless, but lib/billing/plans.ts
+  // only enforces plan limits when STRIPE_SECRET_KEY is configured server-side.
+  // A self-hosted deployment with no Stripe keys behaves exactly as before —
+  // plan stays "free" forever and the usage cap stays effectively unlimited.
+  plan                 String    @default("free")
+  // Mirrors the Stripe Subscription status verbatim (active, trialing,
+  // past_due, canceled, unpaid, incomplete, incomplete_expired) — null until
+  // a workspace has ever started a checkout.
+  planStatus           String?
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  currentPeriodEnd     DateTime?
+
   members           WorkspaceMember[]
   invitations       WorkspaceInvitation[]
   instagramAccounts InstagramAccount[]
