@@ -1,18 +1,18 @@
 /**
  * Hand-written deep-link config, replacing expo-router's implicit file-tree
- * linking. The `openreply://` scheme itself is already registered natively
+ * linking. The `autoreply://` scheme itself is already registered natively
  * in ios/OpenReply/Info.plist and android/app/src/main/AndroidManifest.xml —
  * this is only the JS-side path -> screen mapping.
  *
  * Today the only real inbound deep link is the Instagram OAuth callback,
- * openreply://ig-connect?status=&reason= (see app/ig-connect.jsx). The rest
+ * autoreply://ig-connect?status=&reason= (see app/ig-connect.jsx). The rest
  * of the tree is mapped too so the config stays truthful as more deep links
  * are added, but push-notification taps (src/push/register.js) navigate by
  * screen name directly via navigationRef rather than going through this
  * path-based config.
  */
 export const linking = {
-  prefixes: ["openreply://"],
+  prefixes: ["autoreply://"],
   config: {
     screens: {
       IgConnect: "ig-connect",
@@ -48,6 +48,7 @@ export const linking = {
             screens: {
               MoreMenu: "more",
               Instagram: "more/instagram",
+              Telegram: "more/telegram",
               Members: "more/members",
               Usage: "more/usage",
               Account: "more/account",

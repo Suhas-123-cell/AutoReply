@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../../src/api/client";
@@ -18,6 +18,9 @@ export default function CampaignsScreen() {
   const canManage = canManageWorkspace(role);
   const queryClient = useQueryClient();
   const [accountId, setAccountId] = useState("all");
+  const [cloneTarget, setCloneTarget] = useState(null);
+  const [cloneSelection, setCloneSelection] = useState(new Set());
+  const [cloneResult, setCloneResult] = useState(null);
 
   const { data: accountsData } = useQuery({
     queryKey: ["instagram-accounts"],
@@ -71,6 +74,42 @@ export default function CampaignsScreen() {
       `"${campaign.name}" will stop sending DMs and its history will be removed.`
     );
     if (ok) deleteCampaign.mutate(campaign.id);
+  };
+
+  const clone = useMutation({
+    mutationFn: ({ sourceAutomationId, targetInstagramAccountIds }) =>
+      apiFetch("/api/automations/clone", {
+        method: "POST",
+        body: { sourceAutomationId, targetInstagramAccountIds },
+      }),
+    onSuccess: (data) => {
+      setCloneResult(data);
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: () => Alert.alert("Couldn't clone campaign", "Please try again."),
+  });
+
+  const openClone = (campaign) => {
+    setCloneResult(null);
+    setCloneSelection(new Set());
+    setCloneTarget(campaign);
+  };
+
+  const toggleCloneAccount = (id) => {
+    setCloneSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const submitClone = () => {
+    if (!cloneTarget || cloneSelection.size === 0) return;
+    clone.mutate({
+      sourceAutomationId: cloneTarget.id,
+      targetInstagramAccountIds: [...cloneSelection],
+    });
   };
 
   if (isLoading) {
@@ -163,9 +202,16 @@ export default function CampaignsScreen() {
             </Pressable>
 
             {canManage ? (
-              <Pressable onPress={() => handleDelete(item)} className="mt-3 self-start">
-                <Text className="text-xs font-medium text-error">Delete</Text>
-              </Pressable>
+              <View className="mt-3 flex-row gap-4">
+                {accounts.length > 1 ? (
+                  <Pressable onPress={() => openClone(item)}>
+                    <Text className="text-xs font-medium text-accent">Clone to other clients</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable onPress={() => handleDelete(item)}>
+                  <Text className="text-xs font-medium text-error">Delete</Text>
+                </Pressable>
+              </View>
             ) : null}
           </Card>
         )}
@@ -180,6 +226,89 @@ export default function CampaignsScreen() {
           <Text className="text-2xl font-bold text-background">+</Text>
         </Pressable>
       ) : null}
+
+      <Modal
+        visible={Boolean(cloneTarget)}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCloneTarget(null)}
+      >
+        <Pressable className="flex-1 bg-black/50" onPress={() => setCloneTarget(null)} />
+        <View
+          className="max-h-[80%] rounded-t-2xl border border-border bg-background"
+          style={{ shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 12 }}
+        >
+          <View className="items-center py-2.5">
+            <View className="h-1 w-10 rounded-full bg-border-hover" />
+          </View>
+          <View className="px-4 pb-3">
+            <Text className="text-base font-semibold text-foreground">
+              Clone &ldquo;{cloneTarget?.name}&rdquo;
+            </Text>
+            <Text className="mt-1 text-xs text-muted">
+              Deploys this flow as a new campaign on each selected client account. The post must
+              exist on that account too.
+            </Text>
+          </View>
+
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 4 }}>
+            {accounts
+              .filter((a) => a.id !== cloneTarget?.instagramAccountId)
+              .map((account) => {
+                const checked = cloneSelection.has(account.id);
+                return (
+                  <Pressable
+                    key={account.id}
+                    onPress={() => toggleCloneAccount(account.id)}
+                    className="flex-row items-center gap-3 rounded-lg px-2 py-2.5"
+                  >
+                    <View
+                      className={`h-5 w-5 items-center justify-center rounded border ${
+                        checked ? "border-accent bg-accent" : "border-border"
+                      }`}
+                    >
+                      {checked ? <Text className="text-xs font-bold text-background">✓</Text> : null}
+                    </View>
+                    <Text className="text-sm text-foreground">@{account.username}</Text>
+                  </Pressable>
+                );
+              })}
+          </ScrollView>
+
+          {cloneResult ? (
+            <View className="mx-4 mb-2 rounded-lg border border-border bg-surface p-3">
+              <Text className="text-xs text-success">
+                {cloneResult.created.length} campaign{cloneResult.created.length === 1 ? "" : "s"} created
+              </Text>
+              {cloneResult.skipped.map((s) => (
+                <Text key={s.instagramAccountId} className="mt-1 text-xs text-muted">
+                  Skipped: {s.reason}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <View className="flex-row gap-3 px-4 pb-6 pt-2">
+            <Pressable
+              onPress={() => setCloneTarget(null)}
+              className="flex-1 items-center rounded-lg border border-border px-4 py-3"
+            >
+              <Text className="text-sm font-medium text-foreground">Close</Text>
+            </Pressable>
+            <Pressable
+              onPress={submitClone}
+              disabled={clone.isPending || cloneSelection.size === 0}
+              className={`flex-1 items-center rounded-lg px-4 py-3 ${
+                clone.isPending || cloneSelection.size === 0 ? "bg-accent-hover opacity-60" : "bg-accent"
+              }`}
+            >
+              <Text className="text-sm font-semibold text-background">
+                {clone.isPending ? "Cloning..." : "Clone"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
