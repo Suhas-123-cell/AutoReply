@@ -114,6 +114,50 @@ describe("reserveWorkspaceDMSend", () => {
   });
 });
 
+describe("reserveWorkspaceDMSend with billing configured", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("enforces the workspace's plan limit instead of the unlimited default", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_stub");
+    const periodStart = new Date("2026-05-01T00:00:00.000Z");
+    const STARTER_LIMIT = 5_000;
+
+    // Already at the starter plan's cap — must be denied even though it's
+    // nowhere near the self-hosted UNLIMITED constant.
+    mockTx.workspace.updateMany.mockResolvedValueOnce({ count: 0 });
+    mockTx.workspace.findUnique.mockResolvedValueOnce({
+      usagePeriodStart: periodStart,
+      dmsSentThisPeriod: STARTER_LIMIT,
+      plan: "starter",
+    });
+
+    const result = await reserveWorkspaceDMSend("workspace_123");
+
+    expect(result.allowed).toBe(false);
+    expect(result.limit).toBe(STARTER_LIMIT);
+  });
+
+  it("falls back to the free plan's limit for an unrecognized plan value", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_stub");
+    const periodStart = new Date("2026-05-01T00:00:00.000Z");
+    const FREE_LIMIT = 500;
+
+    mockTx.workspace.updateMany.mockResolvedValueOnce({ count: 0 });
+    mockTx.workspace.findUnique.mockResolvedValueOnce({
+      usagePeriodStart: periodStart,
+      dmsSentThisPeriod: FREE_LIMIT,
+      plan: "not-a-real-plan",
+    });
+
+    const result = await reserveWorkspaceDMSend("workspace_123");
+
+    expect(result.allowed).toBe(false);
+    expect(result.limit).toBe(FREE_LIMIT);
+  });
+});
+
 describe("releaseWorkspaceDMReservation", () => {
   it("decrements only the reserved period", async () => {
     const periodStart = new Date("2026-05-01T00:00:00.000Z");
