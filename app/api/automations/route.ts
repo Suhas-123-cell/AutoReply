@@ -5,7 +5,6 @@ import { logAuditEvent } from "@/lib/audit";
 import { calculateCtr, normalizeTopKeywords } from "@/lib/tracking/analytics";
 import { buildTrackedUrl } from "@/lib/tracking/message";
 import { generateTrackedLinkSlug } from "@/lib/tracking/server";
-import { buildReportUrl, generateReportShareSlug } from "@/lib/reports/share";
 import {
   canManageWorkspace,
   getAccountAccessScope,
@@ -101,7 +100,6 @@ const updateAutomationSchema = z.object({
   publicReplyMessages: z.array(z.string().max(1000)).max(10).optional(),
   isActive: z.boolean().optional(),
   wholeWordMatch: z.boolean().optional(),
-  reportShareEnabled: z.boolean().optional(),
   // Empty string clears the tracked link; a URL updates/creates it; undefined
   // leaves it unchanged.
   trackedDestinationUrl: z
@@ -160,23 +158,6 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" },
   });
 
-  const automationsWithReports = await Promise.all(
-    automations.map(async (automation) => {
-      if (automation.reportShareSlug) return automation;
-
-      const updated = await prisma.automation.update({
-        where: { id: automation.id },
-        data: { reportShareSlug: generateReportShareSlug() },
-        select: { reportShareSlug: true },
-      });
-
-      return {
-        ...automation,
-        reportShareSlug: updated.reportShareSlug,
-      };
-    })
-  );
-
   const [statusCounts, clickCounts, keywordCounts] = await Promise.all([
     prisma.dmLog.groupBy({
       by: ["automationId", "status"],
@@ -206,7 +187,7 @@ export async function GET(request: NextRequest) {
     }
   >();
 
-  for (const automation of automationsWithReports) {
+  for (const automation of automations) {
     analytics.set(automation.id, {
       sent: 0,
       skipped: 0,
@@ -230,7 +211,7 @@ export async function GET(request: NextRequest) {
     if (item) item.clicks = row._count._all;
   }
 
-  for (const automation of automationsWithReports) {
+  for (const automation of automations) {
     const item = analytics.get(automation.id);
     if (!item) continue;
     item.topKeywords = normalizeTopKeywords(
@@ -247,7 +228,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
     success: true,
-    data: automationsWithReports.map((automation) => {
+    data: automations.map((automation) => {
       const item = analytics.get(automation.id) ?? {
         sent: 0,
         skipped: 0,
@@ -262,9 +243,6 @@ export async function GET(request: NextRequest) {
           ...link,
           trackedUrl: buildTrackedUrl(link.slug),
         })),
-        reportUrl: automation.reportShareSlug
-          ? buildReportUrl(automation.reportShareSlug)
-          : null,
         analytics: {
           ...item,
           ctr: calculateCtr(item.clicks, item.sent),
@@ -426,7 +404,6 @@ export async function POST(request: NextRequest) {
       wholeWordMatch: parsed.data.wholeWordMatch,
       workspaceId,
       instagramAccountId: instagramAccount.id,
-      reportShareSlug: generateReportShareSlug(),
       ...(linkCreates.length > 0
         ? { trackedLinks: { create: linkCreates } }
         : {}),

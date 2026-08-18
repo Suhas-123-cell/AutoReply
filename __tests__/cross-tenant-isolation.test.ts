@@ -44,10 +44,6 @@ vi.mock("@/lib/tracking/analytics", () => ({
 }));
 vi.mock("@/lib/tracking/message", () => ({ buildTrackedUrl: vi.fn() }));
 vi.mock("@/lib/tracking/server", () => ({ generateTrackedLinkSlug: vi.fn() }));
-vi.mock("@/lib/reports/share", () => ({
-  buildReportUrl: vi.fn(),
-  generateReportShareSlug: vi.fn(),
-}));
 
 import { DELETE as deleteAutomation, PATCH as patchAutomation } from "../app/api/automations/route";
 import { DELETE as deleteMember } from "../app/api/workspace/members/route";

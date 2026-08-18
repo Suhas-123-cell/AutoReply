@@ -28,7 +28,10 @@ function PlanCard({ plan, isCurrent, canManage, onUpgrade, upgrading }) {
         <View>
           <Text className="text-sm font-semibold text-foreground">{plan.name}</Text>
           <Text className="mt-0.5 text-xs text-muted">
-            {plan.monthlyDmLimit.toLocaleString()} DMs / month
+            {plan.priceUsd === 0
+              ? `${plan.monthlyDmLimit.toLocaleString()} DMs / month · `
+              : "Unlimited DMs · "}
+            {plan.maxConnectedAccounts} account{plan.maxConnectedAccounts === 1 ? "" : "s"}
           </Text>
         </View>
         <Text className="text-lg font-semibold text-foreground">
@@ -146,17 +149,20 @@ export default function UsageScreen() {
       <Card>
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-medium text-foreground">
-              {billing.planName} plan · DMs this month
-            </Text>
+            <Text className="text-sm font-medium text-foreground">{billing.planName} plan</Text>
             {billing.planStatus && billing.planStatus !== "active" ? (
               <Text className="mt-0.5 text-xs text-warning">{billing.planStatus}</Text>
             ) : null}
           </View>
           <Text className="text-lg font-semibold text-foreground">
-            {billing.usage.sent} / {billing.usage.limit.toLocaleString()}
+            {billing.accounts.connected} / {billing.accounts.limit} accounts
           </Text>
         </View>
+        <Text className="mt-2 text-xs text-muted">
+          {billing.usage.sent.toLocaleString()}
+          {billing.plan === "free" ? ` / ${billing.usage.limit.toLocaleString()}` : ""} DMs sent
+          this month
+        </Text>
       </Card>
 
       <Text className="text-sm font-semibold text-foreground">Plans</Text>

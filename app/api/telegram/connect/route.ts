@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
+import { canConnectAnotherAccount } from "@/lib/billing/usage";
 import { encryptToken } from "@/lib/meta/oauth";
 import { getBaseUrl } from "@/lib/env";
 import {
@@ -64,6 +65,18 @@ export async function POST(request: NextRequest) {
   if (!canManageWorkspace(context.role)) {
     return NextResponse.json(
       { success: false, error: "Only owners and admins can connect a bot" },
+      { status: 403 }
+    );
+  }
+
+  const accountLimit = await canConnectAnotherAccount(context.workspaceId);
+  if (!accountLimit.allowed) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Your plan's connected-account limit has been reached. Upgrade to connect more accounts.",
+      },
       { status: 403 }
     );
   }

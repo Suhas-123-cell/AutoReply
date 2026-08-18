@@ -16,6 +16,7 @@ export const linking = {
   config: {
     screens: {
       IgConnect: "ig-connect",
+      InviteAccept: "invite/:token",
       AppTabs: {
         screens: {
           Dashboard: "dashboard",

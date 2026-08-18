@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import AppTabs from "./AppTabs";
 import AuthStack from "./AuthStack";
 import IgConnectScreen from "../../app/ig-connect";
+import InviteAcceptScreen from "../../app/invite/[token]";
 
 const Stack = createNativeStackNavigator();
 
@@ -32,6 +33,11 @@ export default function RootNavigator() {
         <Stack.Screen name="AuthStack" component={AuthStack} />
       )}
       <Stack.Screen name="IgConnect" component={IgConnectScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen
+        name="InviteAccept"
+        component={InviteAcceptScreen}
+        options={{ presentation: "modal" }}
+      />
     </Stack.Navigator>
   );
 }

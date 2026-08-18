@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Pressable, ScrollView, Share, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../../src/api/client";
@@ -39,12 +39,6 @@ export default function CampaignDetailScreen() {
       </View>
     );
   }
-
-  const shareReport = () => {
-    if (campaign.reportUrl) {
-      Share.share({ message: campaign.reportUrl, url: campaign.reportUrl });
-    }
-  };
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -97,15 +91,6 @@ export default function CampaignDetailScreen() {
             </View>
           ))}
         </Card>
-      ) : null}
-
-      {campaign.reportUrl ? (
-        <Pressable
-          onPress={shareReport}
-          className="rounded-lg border border-border bg-surface px-4 py-3"
-        >
-          <Text className="text-center text-sm font-medium text-foreground">Share report</Text>
-        </Pressable>
       ) : null}
 
       {canManage ? (

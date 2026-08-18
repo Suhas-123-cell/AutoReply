@@ -16,13 +16,12 @@ export function getInvitationExpiry() {
   return expiresAt;
 }
 
-export function buildInvitationUrl(token: string, baseUrl?: string) {
-  const resolvedBaseUrl =
-    baseUrl ??
-    (typeof window !== "undefined"
-      ? window.location.origin
-      : process.env.NEXTAUTH_URL ?? "http://localhost:3000");
-
-  return `${resolvedBaseUrl.replace(/\/$/, "")}/invite/${token}`;
+// The app is the only real product surface (see README) — there is no web
+// page to land an invitee on, so this is a mobile deep link, not an HTTPS
+// URL. The owner shares it directly (copy/share sheet); nothing emails it.
+// See mobile/src/navigation/linking.js's "invite/:token" entry and
+// mobile/app/invite/[token].jsx for the landing screen.
+export function buildInvitationUrl(token: string) {
+  return `autoreply://invite/${token}`;
 }
 

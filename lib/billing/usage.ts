@@ -1,16 +1,40 @@
 import { prisma } from "@/lib/db/client";
 import type { Prisma } from "@/app/generated/prisma/client";
-import { getPlan, isBillingConfigured } from "./plans";
-
-// Self-hosted default: usage is still counted per month so the dashboard can
-// report volume, but no cap is enforced unless STRIPE_SECRET_KEY is set (see
-// isBillingConfigured). Must stay within PostgreSQL int4 range, since
-// dmsSentThisPeriod is an Int column compared against this value — two
-// billion DMs/month is effectively unlimited without overflowing the column.
-const UNLIMITED = 2_000_000_000;
+import { getPlan, isBillingConfigured, UNLIMITED } from "./plans";
 
 function getWorkspaceLimit(plan: string): number {
   return isBillingConfigured() ? getPlan(plan).monthlyDmLimit : UNLIMITED;
+}
+
+function getWorkspaceAccountLimit(plan: string): number {
+  return isBillingConfigured() ? getPlan(plan).maxConnectedAccounts : UNLIMITED;
+}
+
+// Combined Instagram + Telegram count, since both share one pool per plan
+// (see PlanDefinition.maxConnectedAccounts in ./plans). Self-hosted (no
+// Stripe key) is always unlimited, same as the DM cap above.
+export async function canConnectAnotherAccount(workspaceId: string): Promise<{
+  allowed: boolean;
+  connected: number;
+  limit: number;
+}> {
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { plan: true },
+  });
+
+  if (!workspace) {
+    return { allowed: false, connected: 0, limit: 0 };
+  }
+
+  const limit = getWorkspaceAccountLimit(workspace.plan);
+  const [instagramCount, telegramCount] = await Promise.all([
+    prisma.instagramAccount.count({ where: { workspaceId } }),
+    prisma.telegramAccount.count({ where: { workspaceId } }),
+  ]);
+  const connected = instagramCount + telegramCount;
+
+  return { allowed: connected < limit, connected, limit };
 }
 
 function getMonthStart(date = new Date()): Date {
