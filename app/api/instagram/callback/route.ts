@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { getBaseUrl } from "@/lib/env";
 import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
+import { canConnectAnotherAccount } from "@/lib/billing/usage";
 import { getLongLivedToken, getUserInfo, subscribeInstagramAccountToWebhooks } from "@/lib/meta/client";
 import {
   encryptToken,
@@ -222,6 +223,23 @@ export async function GET(request: NextRequest) {
 
     if (!connection.allowed) {
       return finish("already_connected");
+    }
+
+    // Only a brand-new account consumes a connected-account slot — the
+    // upsert below also handles re-auth of an already-connected account,
+    // which must never count against the plan limit twice.
+    const isNewConnection = !(await prisma.instagramAccount.findUnique({
+      where: { instagramId },
+      select: { id: true },
+    }));
+    if (isNewConnection) {
+      const accountLimit = await canConnectAnotherAccount(workspaceId);
+      if (!accountLimit.allowed) {
+        return finish("failed", {
+          reason:
+            "Your plan's connected-account limit has been reached. Upgrade to connect more accounts.",
+        });
+      }
     }
 
     const encryptedToken = encryptToken(longLivedToken);

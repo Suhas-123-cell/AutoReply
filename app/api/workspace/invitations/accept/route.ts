@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { normalizeInvitationEmail } from "@/lib/workspace-invitations";
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id || !session.user.email) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return NextResponse.json(
+      { success: false, error: "Sign in with the invited email first" },
+      { status: 401 }
+    );
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  if (!user?.email) {
     return NextResponse.json(
       { success: false, error: "Sign in with the invited email first" },
       { status: 401 }
@@ -43,7 +53,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (normalizeInvitationEmail(session.user.email) !== invitation.email) {
+  if (normalizeInvitationEmail(user.email) !== invitation.email) {
     return NextResponse.json(
       { success: false, error: "This invitation is for a different email" },
       { status: 403 }
@@ -55,12 +65,12 @@ export async function POST(request: NextRequest) {
       where: {
         workspaceId_userId: {
           workspaceId: invitation.workspaceId,
-          userId: session.user.id,
+          userId,
         },
       },
       create: {
         workspaceId: invitation.workspaceId,
-        userId: session.user.id,
+        userId,
         role: invitation.role,
       },
       update: { role: invitation.role },

@@ -9,6 +9,11 @@ export interface PlanDefinition {
   id: PlanId;
   name: string;
   monthlyDmLimit: number;
+  // Combined count of connected Instagram + Telegram accounts a workspace on
+  // this plan may have at once — the actual value lever for an agency
+  // managing multiple clients, unlike DM volume (see canConnectAnotherAccount
+  // in ./usage.ts).
+  maxConnectedAccounts: number;
   priceUsd: number;
   // Stripe Price ID env var name, not the value itself — resolved lazily in
   // lib/billing/stripe.ts so a missing env var doesn't crash module import
@@ -16,25 +21,45 @@ export interface PlanDefinition {
   stripePriceEnvVar: string | null;
 }
 
+// Must stay within PostgreSQL int4 range, since dmsSentThisPeriod is an Int
+// column compared against this value. Doubles as both the self-hosted (no
+// Stripe key) fallback and paid plans' "Unlimited DMs" marketing claim: real
+// throughput is already bounded by Meta/Telegram's own per-account API rate
+// limits, so this ceiling is never actually reachable in practice.
+export const UNLIMITED = 2_000_000_000;
+
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: {
     id: "free",
     name: "Free",
-    monthlyDmLimit: 500,
+    monthlyDmLimit: 5_000,
+    maxConnectedAccounts: 1,
     priceUsd: 0,
     stripePriceEnvVar: null,
   },
   starter: {
     id: "starter",
     name: "Starter",
-    monthlyDmLimit: 5_000,
-    priceUsd: 29,
+    // Marketed as "Unlimited DMs" — a soft abuse/circuit-breaker ceiling,
+    // not a real usage cap (~46% of the 2-account Meta rate-limit ceiling;
+    // see the rate limiter's 750/hr-per-account cap in
+    // lib/utils/rate-limiter.ts for where the real hard stop is). See
+    // canConnectAnotherAccount in ./usage.ts for the limit that actually
+    // matters to buyers.
+    monthlyDmLimit: 500_000,
+    maxConnectedAccounts: 2,
+    priceUsd: 19,
     stripePriceEnvVar: "STRIPE_PRICE_ID_STARTER",
   },
   agency: {
     id: "agency",
     name: "Agency",
-    monthlyDmLimit: 50_000,
+    // Truly unlimited, no soft ceiling — only Meta/Telegram's own
+    // per-account rate limits bound throughput. Unlike Starter, this plan
+    // has no circuit breaker of its own against a compromised or abused
+    // workspace running all 10 accounts flat-out.
+    monthlyDmLimit: UNLIMITED,
+    maxConnectedAccounts: 10,
     priceUsd: 99,
     stripePriceEnvVar: "STRIPE_PRICE_ID_AGENCY",
   },

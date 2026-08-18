@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
-import { generateReportShareSlug } from "@/lib/reports/share";
 import {
   canManageWorkspace,
   getCurrentWorkspaceContext,
@@ -117,7 +116,6 @@ export async function POST(request: NextRequest) {
         publicReplyMessages: source.publicReplyMessages,
         wholeWordMatch: source.wholeWordMatch,
         isActive: source.isActive,
-        reportShareSlug: generateReportShareSlug(),
       },
     });
 

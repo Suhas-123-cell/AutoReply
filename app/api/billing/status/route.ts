@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { getPlan, isBillingConfigured, PLANS } from "@/lib/billing/plans";
+import { canConnectAnotherAccount } from "@/lib/billing/usage";
 
 // Any workspace member can view billing status (read-only) — only
 // checkout/portal (which change or reveal payment details) are owner-only.
@@ -21,6 +22,7 @@ export async function GET() {
   }
 
   const plan = getPlan(context.workspace.plan);
+  const accountLimit = await canConnectAnotherAccount(context.workspaceId);
 
   return NextResponse.json({
     success: true,
@@ -34,6 +36,10 @@ export async function GET() {
       usage: {
         sent: context.workspace.dmsSentThisPeriod,
         limit: plan.monthlyDmLimit,
+      },
+      accounts: {
+        connected: accountLimit.connected,
+        limit: accountLimit.limit,
       },
       plans: Object.values(PLANS),
     },

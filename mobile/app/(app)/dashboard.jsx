@@ -1,7 +1,9 @@
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "../../src/api/client";
+import InAppBrowser from "react-native-inappbrowser-reborn";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch, ApiError } from "../../src/api/client";
 import Card from "../../src/ui/Card";
 import EmptyState from "../../src/ui/EmptyState";
 import Skeleton from "../../src/ui/Skeleton";
@@ -11,6 +13,8 @@ import { colors } from "../../src/ui/tokens";
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [connecting, setConnecting] = useState(false);
   const {
     data: stats,
     isLoading,
@@ -25,6 +29,31 @@ export default function DashboardScreen() {
   // Ported verbatim from app/(dashboard)/dashboard/page.tsx.
   const maxDM = Math.max(...dailyDMs.map((d) => d.count), 1);
 
+  // Same openAuth pattern as more/instagram.jsx's handleConnect — resolves
+  // once the in-app browser redirects back to autoreply://ig-connect,
+  // success or not, so just refetch either way.
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const { authorizeUrl } = await apiFetch("/api/mobile/instagram/connect");
+      if (await InAppBrowser.isAvailable()) {
+        await InAppBrowser.openAuth(authorizeUrl, "autoreply://ig-connect", {
+          ephemeralWebSession: false,
+        });
+      } else {
+        await InAppBrowser.open(authorizeUrl);
+      }
+    } catch (err) {
+      Alert.alert(
+        "Couldn't start connection",
+        err instanceof ApiError ? err.message : "Please try again."
+      );
+    } finally {
+      setConnecting(false);
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    }
+  };
+
   if (isLoading) {
     return (
       <View className="flex-1 gap-3 bg-background p-4" style={{ paddingTop: insets.top + 16 }}>
@@ -35,6 +64,35 @@ export default function DashboardScreen() {
           ))}
         </View>
         <Skeleton className="h-48" />
+      </View>
+    );
+  }
+
+  // New workspaces have nothing to show until an Instagram account is
+  // connected — every stat below would just be zero. Gate the dashboard on
+  // that instead of rendering an empty shell.
+  if ((stats?.instagramAccounts?.length ?? 0) === 0) {
+    return (
+      <View
+        className="flex-1 items-center justify-center gap-4 bg-background px-6"
+        style={{ paddingTop: insets.top }}
+      >
+        <Text className="text-center text-2xl font-bold text-foreground">
+          Connect Instagram to get started
+        </Text>
+        <Text className="text-center text-sm text-muted">
+          AutoReply automates comment-to-DM replies on your Instagram account. Connect one to
+          start tracking activity here.
+        </Text>
+        <Pressable
+          onPress={handleConnect}
+          disabled={connecting}
+          className={`mt-2 rounded-lg px-6 py-3 ${connecting ? "bg-accent-hover opacity-60" : "bg-accent"}`}
+        >
+          <Text className="font-semibold text-background">
+            {connecting ? "Opening..." : "Connect Instagram"}
+          </Text>
+        </Pressable>
       </View>
     );
   }
