@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
 import { decryptToken } from "@/lib/meta/oauth";
@@ -29,7 +30,12 @@ export async function POST(request: NextRequest, { params }: RouteProps) {
   const secretHeader = request.headers.get(
     "x-telegram-bot-api-secret-token"
   );
-  if (secretHeader !== account.webhookSecret) {
+  const expected = Buffer.from(account.webhookSecret);
+  const actual = Buffer.from(secretHeader ?? "");
+  if (
+    expected.length !== actual.length ||
+    !timingSafeEqual(expected, actual)
+  ) {
     return NextResponse.json({ success: false }, { status: 401 });
   }
 
