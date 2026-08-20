@@ -77,7 +77,7 @@ cp .env.example .env      # set API_BASE_URL to your backend above
 npx react-native run-ios      # or run-android
 ```
 
-See [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example) for the full list of environment variables, with comments on where to get each one.
+See [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example) for the full list of environment variables, with comments on where to get each one — or [docs/SETUP.md](docs/SETUP.md) for the same thing as a step-by-step reference (Google OAuth clients, Stripe products, etc.).
 
 ## Tech stack
 
