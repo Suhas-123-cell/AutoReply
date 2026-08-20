@@ -295,7 +295,7 @@ describe("DM Worker — Full Pipeline", () => {
       true
     );
     expect(mockReserveWorkspaceDMSend).toHaveBeenCalledWith("workspace_123");
-    expect(mockReserveDMSlot).toHaveBeenCalledWith("ig_456", 0, 0);
+    expect(mockReserveDMSlot).toHaveBeenCalledWith("ig_456", 0);
     expect(mockDecryptToken).toHaveBeenCalledWith("encrypted_token_abc");
     expect(mockSendPrivateReply).toHaveBeenCalledWith(
       "decrypted_token",
@@ -453,7 +453,12 @@ describe("DM Worker — Full Pipeline", () => {
     );
   });
 
-  it("should skip with SKIPPED_RATE_LIMIT after max requeue attempts", async () => {
+  it("should mark SKIPPED_RATE_LIMIT when reserveDMSlot signals shouldSkip", async () => {
+    // The real rate-limiter only ever returns shouldSkip: true from the burst
+    // path now (after MAX_BURST_REQUEUE_ATTEMPTS) — an hourly-cap block always
+    // requeues instead of giving up, see lib/utils/rate-limiter.ts. This test
+    // exercises the worker's handling of shouldSkip generically, independent
+    // of which path produced it.
     mockReserveDMSlot.mockResolvedValue({
       allowed: false,
       currentCount: 190,
@@ -462,6 +467,7 @@ describe("DM Worker — Full Pipeline", () => {
       requeueDelayMs: 0,
       shouldSkip: true,
       reserved: false,
+      blockedBy: "burst",
     });
 
     const processor = getProcessor();

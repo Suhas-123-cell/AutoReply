@@ -34,6 +34,8 @@ import {
   RATE_LIMIT_MAX,
 } from "../lib/utils/rate-limiter";
 
+const OVER_HOURLY_CAP: [string, string, string] = ["0", String(RATE_LIMIT_MAX), "0"];
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -72,14 +74,17 @@ describe("checkRateLimit", () => {
     expect(result.shouldSkip).toBe(false);
   });
 
-  it("should skip after max requeue attempts", async () => {
+  it("never gives up on an hourly-cap block, no matter how many prior attempts", async () => {
+    // A block from this cap always clears within the hour, so there is no
+    // attempt ceiling — see the module docstring for why an earlier version's
+    // 3-attempt cap silently dropped DMs during a large comment burst.
     mockGet.mockResolvedValue(String(RATE_LIMIT_MAX));
 
-    const result = await checkRateLimit("account_123", 3);
+    const result = await checkRateLimit("account_123");
 
     expect(result.allowed).toBe(false);
-    expect(result.shouldRequeue).toBe(false);
-    expect(result.shouldSkip).toBe(true);
+    expect(result.shouldRequeue).toBe(true);
+    expect(result.shouldSkip).toBe(false);
   });
 });
 
@@ -125,16 +130,20 @@ describe("reserveDMSlot", () => {
     expect(result.shouldSkip).toBe(false);
   });
 
-  it("should skip after max requeue attempts", async () => {
+  it("never gives up on an hourly-cap block, regardless of prior attempts", async () => {
     mockEval
       .mockResolvedValueOnce(BURST_ALLOWED)
-      .mockResolvedValueOnce(["0", String(RATE_LIMIT_MAX), "0"]);
+      .mockResolvedValueOnce(OVER_HOURLY_CAP);
 
-    const result = await reserveDMSlot("account_123", 3);
+    // reserveDMSlot no longer takes a requeueAttempt param at all (there's
+    // nothing left for it to gate) — an hourly-cap block always requeues
+    // instead of ever giving up, since the window clears on its own.
+    const result = await reserveDMSlot("account_123");
 
     expect(result.allowed).toBe(false);
-    expect(result.shouldRequeue).toBe(false);
-    expect(result.shouldSkip).toBe(true);
+    expect(result.shouldRequeue).toBe(true);
+    expect(result.shouldSkip).toBe(false);
+    expect(result.requeueDelayMs).toBeGreaterThan(0);
   });
 
   it("requeues quickly, without touching the hourly slot, when only the burst cap is hit", async () => {
