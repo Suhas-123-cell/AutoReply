@@ -12,6 +12,15 @@
  * Note this is a hard ceiling with no headroom. If Meta throttles before the
  * documented limit, or other calls on the same account share the bucket, lower
  * this value.
+ *
+ * A block from this cap is never permanent: the window always clears on its
+ * own within an hour, so there is no attempt ceiling here — a blocked job
+ * just keeps requeuing every REQUEUE_DELAY_MS until a slot opens. (An
+ * earlier version capped this at 3 attempts, which meant a big backlog —
+ * e.g. 2000 comments on one post in an hour — permanently dropped everyone
+ * past the first ~1,500 instead of just sending them late.) The comment's
+ * own 7-day private-reply deadline, checked separately in the worker before
+ * this is ever reached, is what actually bounds how long a job keeps trying.
  */
 
 import Redis from "ioredis";
@@ -19,7 +28,6 @@ import Redis from "ioredis";
 const RATE_LIMIT_MAX = 750; // private replies per hour, per Meta's documented cap
 const RATE_LIMIT_WINDOW = 3600; // 1 hour in seconds
 const REQUEUE_DELAY_MS = 30 * 60 * 1000; // 30 minutes
-const MAX_REQUEUE_ATTEMPTS = 3;
 
 // Meta also documents a short-window burst cap on messaging endpoints
 // (2 calls/sec per Instagram professional account), separate from and much
@@ -88,23 +96,7 @@ function toScriptNumber(value: unknown): number {
   return 0;
 }
 
-function blockedResult(
-  count: number,
-  requeueAttempt: number
-): RateLimitResult {
-  if (requeueAttempt >= MAX_REQUEUE_ATTEMPTS) {
-    return {
-      allowed: false,
-      currentCount: count,
-      remainingDMs: 0,
-      shouldRequeue: false,
-      requeueDelayMs: 0,
-      shouldSkip: true,
-      reserved: false,
-      blockedBy: "hourly",
-    };
-  }
-
+function blockedResult(count: number): RateLimitResult {
   return {
     allowed: false,
     currentCount: count,
@@ -124,12 +116,10 @@ function blockedResult(
  * Key pattern: `rate:dm:{instagramAccountId}`
  *
  * @param instagramAccountId - The Instagram account ID to check
- * @param requeueAttempt - How many times this job has been requeued (0 = first attempt)
  * @returns Rate limit result with action recommendations
  */
 export async function checkRateLimit(
-  instagramAccountId: string,
-  requeueAttempt: number = 0
+  instagramAccountId: string
 ): Promise<RateLimitResult> {
   const client = getRedis();
   const key = `rate:dm:${instagramAccountId}`;
@@ -138,20 +128,6 @@ export async function checkRateLimit(
   const count = currentCount ? parseInt(currentCount, 10) : 0;
 
   if (count >= RATE_LIMIT_MAX) {
-    // Over the limit
-    if (requeueAttempt >= MAX_REQUEUE_ATTEMPTS) {
-      // Exceeded max requeue attempts — skip this DM
-      return {
-        allowed: false,
-        currentCount: count,
-        remainingDMs: 0,
-        shouldRequeue: false,
-        requeueDelayMs: 0,
-        shouldSkip: true,
-        reserved: false,
-      };
-    }
-
     return {
       allowed: false,
       currentCount: count,
@@ -181,7 +157,6 @@ export async function checkRateLimit(
  */
 export async function reserveDMSlot(
   instagramAccountId: string,
-  requeueAttempt: number = 0,
   burstRequeueAttempt: number = 0
 ): Promise<RateLimitResult> {
   const client = getRedis();
@@ -241,7 +216,7 @@ export async function reserveDMSlot(
   const remaining = toScriptNumber(values[2]);
 
   if (allowedFlag !== 1) {
-    return blockedResult(count, requeueAttempt);
+    return blockedResult(count);
   }
 
   return {
@@ -262,7 +237,7 @@ export async function reserveDMSlot(
 export async function incrementDMCounter(
   instagramAccountId: string
 ): Promise<number> {
-  const result = await reserveDMSlot(instagramAccountId, MAX_REQUEUE_ATTEMPTS);
+  const result = await reserveDMSlot(instagramAccountId);
   return result.currentCount;
 }
 
@@ -290,4 +265,4 @@ export async function resetRateLimit(
 }
 
 // Export constants for use in tests
-export { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW, REQUEUE_DELAY_MS, MAX_REQUEUE_ATTEMPTS };
+export { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW, REQUEUE_DELAY_MS };

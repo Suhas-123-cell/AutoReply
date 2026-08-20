@@ -332,7 +332,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
 
     let rateLimit;
     try {
-      rateLimit = await reserveDMSlot(instagramAccountId, requeueAttempt, burstRequeueAttempt);
+      rateLimit = await reserveDMSlot(instagramAccountId, burstRequeueAttempt);
     } catch (error) {
       await releaseWorkspaceDMReservation(
         automation.workspaceId,
