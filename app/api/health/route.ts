@@ -12,47 +12,51 @@ type CheckStatus = "ok" | "error";
 
 interface HealthCheck {
   status: CheckStatus;
-  detail?: string;
 }
 
+// This endpoint is deliberately unauthenticated — it's what a load
+// balancer / uptime monitor hits, and requiring a secret would defeat that.
+// Because of that, its response must never carry anything beyond a per-check
+// ok/error verdict: no raw error text, no hostnames/pids, no queue depth.
+// Full diagnostics (including this same data with real detail) already
+// exist at /api/admin/diagnostics, which requires ADMIN/OWNER auth.
 async function checkDatabase(): Promise<HealthCheck> {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return { status: "ok" };
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Database check failed",
-    };
+    console.error("[Health] Database check failed:", error);
+    return { status: "error" };
   }
 }
 
 async function checkRedis(): Promise<HealthCheck> {
   try {
     const pong = await getRedisConnection().ping();
-    return { status: pong === "PONG" ? "ok" : "error", detail: pong };
+    return { status: pong === "PONG" ? "ok" : "error" };
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Redis check failed",
-    };
+    console.error("[Health] Redis check failed:", error);
+    return { status: "error" };
   }
 }
 
-async function checkQueue(): Promise<HealthCheck & { counts?: unknown }> {
+async function checkQueue(): Promise<HealthCheck> {
   try {
-    const counts = await getDMQueue().getJobCounts(
-      "waiting",
-      "active",
-      "delayed",
-      "failed"
-    );
-    return { status: "ok", counts };
+    await getDMQueue().getJobCounts("waiting", "active", "delayed", "failed");
+    return { status: "ok" };
   } catch (error) {
-    return {
-      status: "error",
-      detail: error instanceof Error ? error.message : "Queue check failed",
-    };
+    console.error("[Health] Queue check failed:", error);
+    return { status: "error" };
+  }
+}
+
+async function checkWorker(): Promise<HealthCheck> {
+  try {
+    const worker = await getWorkerHealth();
+    return { status: worker.healthy ? "ok" : "error" };
+  } catch (error) {
+    console.error("[Health] Worker check failed:", error);
+    return { status: "error" };
   }
 }
 
@@ -61,19 +65,14 @@ export async function GET() {
     checkDatabase(),
     checkRedis(),
     checkQueue(),
-    getWorkerHealth().catch((error) => ({
-      healthy: false,
-      heartbeat: null,
-      ageMs: null,
-      error: error instanceof Error ? error.message : "Worker check failed",
-    })),
+    checkWorker(),
   ]);
 
   const healthy =
     database.status === "ok" &&
     redis.status === "ok" &&
     queue.status === "ok" &&
-    worker.healthy;
+    worker.status === "ok";
 
   return NextResponse.json(
     {
