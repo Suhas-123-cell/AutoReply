@@ -83,6 +83,65 @@ describe("matchKeywords — whole word matching", () => {
   });
 });
 
+describe("matchKeywords — whole word, typo tolerance", () => {
+  it("should match a one-letter typo on a long-enough keyword", () => {
+    const result = matchKeywords("what's the pricee on this", ["price"], true);
+    expect(result.matched).toBe(true);
+    expect(result.matchedKeyword).toBe("price");
+  });
+
+  it("should match a missing-letter typo", () => {
+    const result = matchKeywords("send me the shiping info", ["shipping"], true);
+    expect(result.matched).toBe(true);
+  });
+
+  it("should NOT apply typo tolerance to short keywords", () => {
+    // "link" is only 4 letters — too many unrelated real words (pink, wink,
+    // sink) are one edit away, so short keywords stay exact-match only.
+    const result = matchKeywords("I love this pink dress", ["link"], true);
+    expect(result.matched).toBe(false);
+  });
+
+  it("should still reject a genuinely different word of similar length", () => {
+    const result = matchKeywords("what a lovely sunset", ["price"], true);
+    expect(result.matched).toBe(false);
+  });
+
+  it("should not fuzzy-match multi-word keywords", () => {
+    const result = matchKeywords("more infoo please", ["more info"], true);
+    expect(result.matched).toBe(false);
+  });
+});
+
+describe("matchKeywords — whole word, plural tolerance", () => {
+  it("should match a plural comment against a singular keyword", () => {
+    const result = matchKeywords("what are your prices?", ["price"], true);
+    expect(result.matched).toBe(true);
+  });
+
+  it("should match a singular comment against a plural keyword", () => {
+    const result = matchKeywords("send me a discount", ["discounts"], true);
+    expect(result.matched).toBe(true);
+  });
+
+  it("should match -ies plurals", () => {
+    const result = matchKeywords("what categories do you have", ["category"], true);
+    expect(result.matched).toBe(true);
+  });
+
+  it("should match plurals even on keywords too short for typo tolerance", () => {
+    // "sale" is 4 letters — below the typo-tolerance floor — but plural
+    // matching has its own, lower minimum and should still catch "sales".
+    const result = matchKeywords("any sales this week?", ["sale"], true);
+    expect(result.matched).toBe(true);
+  });
+
+  it("should still exclude verb-form matches like the linking/link case", () => {
+    const result = matchKeywords("I am linking to you", ["link"], true);
+    expect(result.matched).toBe(false);
+  });
+});
+
 describe("matchKeywords — partial matching", () => {
   it("should match partial words in partial mode", () => {
     const result = matchKeywords("I am linking to you", ["link"], false);
