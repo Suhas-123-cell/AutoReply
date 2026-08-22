@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
@@ -28,7 +28,10 @@ export default function WizardStep1() {
     queryKey: ["instagram-accounts"],
     queryFn: () => apiFetch("/api/instagram/accounts"),
   });
-  const accounts = accountsData?.instagramAccounts ?? [];
+  const accounts = useMemo(
+    () => accountsData?.instagramAccounts ?? [],
+    [accountsData]
+  );
 
   // Default to the first connected account once accounts load, if the
   // (persisted) draft doesn't already have one.
