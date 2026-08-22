@@ -59,7 +59,7 @@ export default function ThreadScreen() {
     refetchInterval: useFocusedPolling(POLL_MS),
   });
 
-  const serverMessages = data?.messages ?? [];
+  const serverMessages = useMemo(() => data?.messages ?? [], [data]);
 
   // Instagram only allows a reply within 24h of the customer's last inbound
   // message. Find the most recent non-fromMe message and check its age.
