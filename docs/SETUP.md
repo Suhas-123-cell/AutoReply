@@ -15,10 +15,15 @@ actually get this value" reference. Run steps are in the main
 | `REDIS_URL` | Yes | Your Redis connection string |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Yes | [resend.com](https://resend.com) — email magic-links + mobile email codes |
 | `META_GRAPH_API_VERSION`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `FACEBOOK_APP_SECRET`, `WEBHOOK_VERIFY_TOKEN` | Yes | [Meta developer app](https://developers.facebook.com/apps) → App settings / Webhooks. `WEBHOOK_VERIFY_TOKEN` is any string you choose — set the same value in Meta's webhook config. |
+| `LEGAL_OPERATOR_NAME`, `LEGAL_CONTACT_EMAIL` | For App Review / store listing | Shown on `/privacy`, `/terms`, `/data-deletion`. Paste those three URLs into Meta's App Review form and the App Store / Play Console privacy fields. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes | Firebase console → Project settings → Service accounts → Generate new private key (paste the whole JSON as one line) |
 | `MOBILE_OTP_DEV_ECHO` | Dev only | `true` locally so sign-in codes echo back in the API response instead of needing real email delivery. **Must be unset in production.** |
 | `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` / `GOOGLE_ANDROID_CLIENT_ID` | For Google Sign-In | See [Google OAuth clients](#google-oauth-clients) below |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_ID_STARTER` / `STRIPE_PRICE_ID_AGENCY` | Optional | See [Stripe billing](#stripe-billing-optional) below — self-hosted works fine with none of these set |
+
+## Meta webhook fields
+
+In the Meta app dashboard → **Webhooks → Instagram**, subscribe to both `comments` and `messages`. `comments` drives post/reel campaigns; `messages` drives DM and Story-reply triggers plus the button taps used by opening DMs and follow gates. The backend subscribes each connected account to both fields automatically, but the app-level subscription has to exist first or Meta never delivers them.
 
 ## Mobile — `mobile/.env`
 
