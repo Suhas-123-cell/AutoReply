@@ -1,6 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   validateStep1,
+  buildTriggerFields,
   validateStep2,
   validateStep3,
   validateStep4,
@@ -216,5 +217,29 @@ describe("buildAutomationPayload", () => {
       "Sent you a DM!",
       "Check your inbox",
     ]);
+  });
+});
+
+describe("buildTriggerFields", () => {
+  it("maps a DM-only scope to dmTriggerEnabled with no post", () => {
+    expect(buildTriggerFields({ ...baseDraft, triggerScope: "dm", postId: "p1" })).toEqual({
+      postId: null,
+      postUrl: null,
+      matchAnyPost: false,
+      pendingNextReel: false,
+      dmTriggerEnabled: true,
+    });
+  });
+
+  it("keeps the post scope and adds the DM trigger when dmTriggerAlso is on", () => {
+    expect(
+      buildTriggerFields({ ...baseDraft, triggerScope: "any", dmTriggerAlso: true })
+    ).toMatchObject({ matchAnyPost: true, dmTriggerEnabled: true });
+  });
+
+  it("leaves the DM trigger off by default", () => {
+    expect(buildTriggerFields({ ...baseDraft, triggerScope: "any" }).dmTriggerEnabled).toBe(
+      false
+    );
   });
 });

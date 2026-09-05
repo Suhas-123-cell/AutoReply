@@ -72,9 +72,16 @@ export default function CampaignDetailScreen() {
               ? "Any post"
               : campaign.pendingNextReel
                 ? "Next reel"
-                : campaign.postUrl ?? "Specific post"
+                : campaign.postId
+                  ? campaign.postUrl ?? "Specific post"
+                  : "DMs and Story replies only"
           }
         />
+        {campaign.dmTriggerEnabled && campaign.postId ? (
+          <Row label="Also on" value="DMs and Story replies (followers only)" />
+        ) : campaign.dmTriggerEnabled && (campaign.matchAnyPost || campaign.pendingNextReel) ? (
+          <Row label="Also on" value="DMs and Story replies (followers only)" />
+        ) : null}
         <Row label="DM message" value={campaign.dmMessage} multiline />
       </Card>
 

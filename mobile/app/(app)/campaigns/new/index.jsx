@@ -8,12 +8,14 @@ import { canManageWorkspace } from "../../../../src/lib/workspace-access";
 import { validateStep1 } from "../../../../src/lib/campaign-validation";
 import { useCampaignWizardStore } from "../../../../src/store/campaignWizardStore";
 import EmptyState from "../../../../src/ui/EmptyState";
+import Toggle from "../../../../src/ui/Toggle";
 import WizardFooter from "../../../../src/ui/WizardFooter";
 
 const SCOPES = [
   { value: "specific", label: "A specific post or reel" },
   { value: "any", label: "Any post or reel" },
   { value: "next", label: "The next post or reel" },
+  { value: "dm", label: "A DM or Story reply only (no post)" },
 ];
 
 export default function WizardStep1() {
@@ -114,7 +116,7 @@ export default function WizardStep1() {
         ) : null}
 
         <View className="gap-2">
-          <Text className="text-sm font-semibold text-foreground">When someone comments on</Text>
+          <Text className="text-sm font-semibold text-foreground">When someone comments on, or sends</Text>
           <View className="gap-2">
             {SCOPES.map((scope) => {
               const checked = draft.triggerScope === scope.value;
@@ -167,6 +169,26 @@ export default function WizardStep1() {
             </Pressable>
           ) : null}
         </View>
+
+        {draft.triggerScope !== "dm" ? (
+          <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
+            <View className="flex-1 pr-3">
+              <Text className="text-sm text-foreground">Also reply to DMs and Story replies</Text>
+              <Text className="mt-0.5 text-xs text-muted">
+                Same keywords, sent as a DM. Only confirmed followers get the link.
+              </Text>
+            </View>
+            <Toggle
+              value={draft.dmTriggerAlso}
+              onValueChange={(value) => setFields({ dmTriggerAlso: value })}
+            />
+          </View>
+        ) : (
+          <Text className="text-xs text-muted">
+            Fires when someone DMs your account or replies to your Story with a keyword. The link
+            goes only to confirmed followers; everyone else gets a follow prompt first.
+          </Text>
+        )}
       </ScrollView>
 
       <WizardFooter

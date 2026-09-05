@@ -16,8 +16,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const initialDraft = {
   instagramAccountId: null,
 
-  // Step 1: trigger scope
-  triggerScope: "any", // "specific" | "any" | "next"
+  // Step 1: trigger scope. "dm" = DMs and Story replies only, no post.
+  triggerScope: "any", // "specific" | "any" | "next" | "dm"
+  // Also fire on DMs / Story replies alongside a post scope.
+  dmTriggerAlso: false,
   postId: null,
   postUrl: null,
   postThumb: null,
