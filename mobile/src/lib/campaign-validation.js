@@ -75,15 +75,24 @@ export function validateAll(draft) {
   );
 }
 
+/** Maps the wizard's trigger controls onto the API's four trigger fields. */
+export function buildTriggerFields(draft) {
+  const scope = draft.triggerScope;
+  return {
+    postId: scope === "specific" ? draft.postId : null,
+    postUrl: scope === "specific" ? draft.postUrl : null,
+    matchAnyPost: scope === "any",
+    pendingNextReel: scope === "next",
+    dmTriggerEnabled: scope === "dm" || Boolean(draft.dmTriggerAlso),
+  };
+}
+
 /** Builds the exact JSON body createAutomationSchema/updateAutomationSchema expect. */
 export function buildAutomationPayload(draft) {
   return {
     name: draft.name.trim(),
     instagramAccountId: draft.instagramAccountId,
-    postId: draft.triggerScope === "specific" ? draft.postId : null,
-    postUrl: draft.triggerScope === "specific" ? draft.postUrl : null,
-    matchAnyPost: draft.triggerScope === "any",
-    pendingNextReel: draft.triggerScope === "next",
+    ...buildTriggerFields(draft),
     matchAnyWord: draft.matchAnyWord,
     keywords: draft.matchAnyWord ? [] : draft.keywords,
     wholeWordMatch: draft.wholeWordMatch,

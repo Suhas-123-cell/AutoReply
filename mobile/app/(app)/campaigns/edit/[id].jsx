@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/auth/AuthContext";
 import { canManageWorkspace } from "../../../../src/lib/workspace-access";
-import { validateAll } from "../../../../src/lib/campaign-validation";
+import { buildTriggerFields, validateAll } from "../../../../src/lib/campaign-validation";
 import CampaignPreviewSheet from "../../../../src/ui/CampaignPreviewSheet";
 import KeywordChipInput from "../../../../src/ui/KeywordChipInput";
 import Skeleton from "../../../../src/ui/Skeleton";
@@ -48,7 +48,16 @@ export default function EditCampaignScreen() {
     const secondLink = campaign.trackedLinks?.[1];
     const hydrated = {
       name: campaign.name ?? "",
-      triggerScope: campaign.matchAnyPost ? "any" : campaign.pendingNextReel ? "next" : "specific",
+      triggerScope: campaign.matchAnyPost
+        ? "any"
+        : campaign.pendingNextReel
+          ? "next"
+          : campaign.postId
+            ? "specific"
+            : "dm",
+      dmTriggerAlso: Boolean(campaign.dmTriggerEnabled) && Boolean(
+        campaign.matchAnyPost || campaign.pendingNextReel || campaign.postId
+      ),
       postId: campaign.postId ?? null,
       postUrl: campaign.postUrl ?? null,
       keywords: campaign.keywords ?? [],
@@ -103,10 +112,7 @@ export default function EditCampaignScreen() {
 
     const full = {
       name: form.name.trim(),
-      postId: form.triggerScope === "specific" ? form.postId : null,
-      postUrl: form.triggerScope === "specific" ? form.postUrl : null,
-      matchAnyPost: form.triggerScope === "any",
-      pendingNextReel: form.triggerScope === "next",
+      ...buildTriggerFields(form),
       matchAnyWord: form.matchAnyWord,
       keywords: form.matchAnyWord ? [] : form.keywords,
       wholeWordMatch: form.wholeWordMatch,
@@ -135,10 +141,7 @@ export default function EditCampaignScreen() {
     // updateAutomationSchema treats every field as independently optional.
     const initialFull = {
       name: initial.name,
-      postId: initial.triggerScope === "specific" ? initial.postId : null,
-      postUrl: initial.triggerScope === "specific" ? initial.postUrl : null,
-      matchAnyPost: initial.triggerScope === "any",
-      pendingNextReel: initial.triggerScope === "next",
+      ...buildTriggerFields(initial),
       matchAnyWord: initial.matchAnyWord,
       keywords: initial.matchAnyWord ? [] : initial.keywords,
       wholeWordMatch: initial.wholeWordMatch,
@@ -255,6 +258,25 @@ export default function EditCampaignScreen() {
               onValueChange={(value) => setField("wholeWordMatch", value)}
             />
           </View>
+          {form.triggerScope !== "dm" ? (
+            <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
+              <View className="flex-1 pr-3">
+                <Text className="text-sm text-foreground">Also reply to DMs and Story replies</Text>
+                <Text className="mt-0.5 text-xs text-muted">
+                  Only confirmed followers get the link.
+                </Text>
+              </View>
+              <Toggle
+                value={form.dmTriggerAlso}
+                onValueChange={(value) => setField("dmTriggerAlso", value)}
+              />
+            </View>
+          ) : (
+            <Text className="text-xs text-muted">
+              This campaign fires on DMs and Story replies only. Followers get the link; everyone
+              else gets a follow prompt first.
+            </Text>
+          )}
         </Section>
 
         <Section title="They will get">
