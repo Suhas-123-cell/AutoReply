@@ -22,12 +22,14 @@ AutoReply is built around Meta's official Instagram private replies and Telegram
 
 ## Features
 
-- Keyword to DM, on Instagram or Telegram. Match one or many keywords, whole-word or partial.
+- Keyword to DM, on Instagram or Telegram. Match one or many keywords, whole-word or partial, with typo and plural tolerance.
+- DM and Story-reply triggers. The same keywords also fire when someone DMs your account or replies to your Story (Instagram delivers Story replies as DMs), so "Reply LINK to this Story" works with no post involved. Turn it on per campaign, alone or alongside a post trigger. Subscribe to the `messages` webhook field in your Meta app.
+- Followers-only links on the DM path. A DM or Story-reply trigger only ever hands the link to a confirmed follower. Everyone else, including anyone whose follow status Instagram can't resolve, gets a follow prompt with a button that re-checks on tap. This is always on for DM triggers, independent of the per-campaign follow gate below.
 - Optional public reply on Instagram. Post a visible comment reply on top of the DM.
 - Telegram bots, zero gate. Connect a `@BotFather` token and you're live in about two minutes — no Meta App Review wait.
 - Tracked links. Swap a link for a tracked redirect and see clicks and CTR per campaign.
 - Two link buttons. Send up to two tappable link buttons in one DM, each a separate tracked link with its own click stats.
-- Follow gate (Instagram). Optionally require a follow before you hand over the link, checked against Meta's `is_user_follow_business` flag. Fails open (sends the link anyway) if Instagram doesn't return follow status, so a real follower is never trapped.
+- Follow gate (Instagram comments). Optionally require a follow before you hand over the link, checked against Meta's `is_user_follow_business` flag. On the comment path it fails open (sends the link anyway) if Instagram doesn't return follow status, so a real follower is never trapped.
 - Personalization. Use `{username}` in your message to greet the commenter by name.
 - Per-account rate limiting. Stays under Meta's documented cap of 750 private replies per hour, queuing the overflow instead of dropping it.
 - Multiple accounts, Instagram and Telegram both. Connect several under one workspace, each with its own limits.
@@ -41,13 +43,13 @@ AutoReply is built around Meta's official Instagram private replies and Telegram
 
 ## How it works
 
-1. Someone comments on your Instagram post/reel, or messages your Telegram bot.
+1. Someone comments on your Instagram post/reel, DMs you, replies to your Story, or messages your Telegram bot.
 2. Meta or Telegram sends a webhook to your AutoReply backend.
 3. The backend checks the message against your active campaigns.
 4. On a keyword match, it queues a job.
 5. A background worker sends the private reply (and the public reply on Instagram, if enabled).
 
-The Next.js app receives the webhook and serves the API the mobile app calls — it has no dashboard, no login page, nothing a browser is meant to visit. A separate worker process does the sending, because it has to survive rate limits and retries. Both talk to the same Postgres and Redis.
+The Next.js app receives the webhook and serves the API the mobile app calls — it has no dashboard and no login page. The only browser-visible routes are `/privacy`, `/terms`, and `/data-deletion`, which Meta App Review and the app stores require; set `LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` so they show your details. A separate worker process does the sending, because it has to survive rate limits and retries. Both talk to the same Postgres and Redis.
 
 ## Quick start
 
