@@ -245,6 +245,12 @@ model Automation {
   matchAnyPost   Boolean @default(false)
   keywords       String[]
   matchAnyWord   Boolean @default(false)
+  // Also fire on inbound DMs and Story replies (Instagram delivers a Story
+  // reply as a DM) whose text matches the keywords. Independent of the post
+  // scope: a campaign may be comments-only, DM-only (no post at all), or both.
+  // The DM path is always follow-gated — see processMessage in
+  // lib/queue/dm-worker.ts.
+  dmTriggerEnabled Boolean @default(false)
   dmMessage      String
   openingDmEnabled     Boolean @default(false)
   openingDmMessage     String?

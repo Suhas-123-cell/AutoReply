@@ -105,6 +105,7 @@ vi.mock("@/lib/queue/client", () => ({
   }),
   getRedisConnection: vi.fn(),
   POSTBACK_JOB_NAME: "process-postback",
+  MESSAGE_JOB_NAME: "process-message",
 }));
 
 vi.mock("bullmq", () => {
@@ -807,5 +808,197 @@ describe("DM Worker — Full Pipeline", () => {
       "commenter_999",
       "Hey commenter_user! Here is the link: https://example.com"
     );
+  });
+});
+
+describe("processMessage (DM / Story reply trigger)", () => {
+  const dmAutomation = {
+    ...mockAutomation,
+    postId: null,
+    dmTriggerEnabled: true,
+    requireFollow: false,
+    followPromptMessage: null,
+    followPromptButtonLabel: null,
+  };
+
+  function createMessageJob(data: Record<string, unknown> = {}) {
+    return {
+      name: "process-message",
+      data: {
+        instagramAccountId: "ig_456",
+        messageId: "mid_001",
+        messageText: "LINK please",
+        senderId: "commenter_999",
+        isStoryReply: false,
+        ...data,
+      },
+      id: "message_job_001",
+      attemptsMade: 0,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPrisma.automation.findMany.mockResolvedValue([dmAutomation]);
+    mockPrisma.dmLog.findUnique.mockResolvedValue(null);
+    mockPrisma.dmLog.findFirst.mockResolvedValue({ commenterName: "sam" });
+    mockPrisma.dmLog.upsert.mockImplementation(async ({ create }) => ({
+      id: "log_dm_1",
+      ...create,
+    }));
+    mockDecryptToken.mockReturnValue("decrypted_token");
+    mockMatchKeywords.mockReturnValue({ matched: true, matchedKeyword: "LINK" });
+    mockReserveWorkspaceDMSend.mockResolvedValue({
+      allowed: true,
+      limit: 1000,
+      periodStart: usagePeriodStart,
+    });
+  });
+
+  it("only queries campaigns with the DM trigger on", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(true);
+    await getProcessor()(createMessageJob());
+    expect(mockPrisma.automation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ dmTriggerEnabled: true, isActive: true }),
+      })
+    );
+  });
+
+  it("sends the link straight away to a confirmed follower", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(true);
+    await getProcessor()(createMessageJob());
+
+    expect(mockGetUserFollowStatus).toHaveBeenCalledWith(
+      "decrypted_token",
+      "commenter_999"
+    );
+    expect(mockSendDirectMessage).toHaveBeenCalledWith(
+      "decrypted_token",
+      "ig_456",
+      "commenter_999",
+      expect.stringContaining("https://example.com")
+    );
+    expect(mockSendDirectMessageWithButton).not.toHaveBeenCalled();
+    expect(mockPrisma.dmLog.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          automationId_commentId: { automationId: "auto_789", commentId: "dm:mid_001" },
+        },
+        create: expect.objectContaining({ status: "SENT", commentText: "(dm) LINK please" }),
+      })
+    );
+  });
+
+  it("sends the follow prompt, not the link, to a non-follower even when requireFollow is off", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(false);
+    await getProcessor()(createMessageJob({ isStoryReply: true }));
+
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockSendDirectMessageWithLinkButton).not.toHaveBeenCalled();
+    expect(mockSendDirectMessageWithButton).toHaveBeenCalledWith(
+      "decrypted_token",
+      "ig_456",
+      "commenter_999",
+      expect.any(String),
+      "i'm following",
+      "strictfollowcheck:auto_789"
+    );
+    expect(mockPrisma.dmLog.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ commentText: "(story reply) LINK please" }),
+      })
+    );
+  });
+
+  it("fails closed: an unverifiable follow status also gets the prompt", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(null);
+    await getProcessor()(createMessageJob());
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockSendDirectMessageWithButton).toHaveBeenCalled();
+  });
+
+  it("uses a link button when the campaign has tracked links", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(true);
+    mockPrisma.automation.findMany.mockResolvedValue([
+      {
+        ...dmAutomation,
+        trackedLinks: [{ slug: "abc123", label: null, destinationUrl: "https://x.test" }],
+      },
+    ]);
+    await getProcessor()(createMessageJob());
+    expect(mockSendDirectMessageWithLinkButton).toHaveBeenCalled();
+  });
+
+  it("never replies twice to the same message", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(true);
+    mockPrisma.dmLog.findUnique.mockResolvedValue({ status: "SENT" });
+    await getProcessor()(createMessageJob());
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the text matches no keyword", async () => {
+    mockMatchKeywords.mockReturnValue({ matched: false, matchedKeyword: null });
+    await getProcessor()(createMessageJob({ messageText: "hello" }));
+    expect(mockGetUserFollowStatus).not.toHaveBeenCalled();
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("processPostback strictfollowcheck", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPrisma.automation.findFirst.mockResolvedValue({
+      ...mockAutomation,
+      requireFollow: false,
+      followPromptMessage: null,
+      followPromptButtonLabel: null,
+    });
+    mockPrisma.dmLog.findUnique.mockResolvedValue(null);
+    mockPrisma.dmLog.findFirst.mockResolvedValue(null);
+    mockPrisma.dmLog.upsert.mockImplementation(async ({ create }) => ({
+      id: "log_pb_1",
+      ...create,
+    }));
+    mockDecryptToken.mockReturnValue("decrypted_token");
+    mockReserveWorkspaceDMSend.mockResolvedValue({
+      allowed: true,
+      limit: 1000,
+      periodStart: usagePeriodStart,
+    });
+  });
+
+  it("re-prompts on tap when the follow can't be confirmed, even with requireFollow off", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(null);
+    await getProcessor()(
+      createMockPostbackJob({
+        instagramAccountId: "ig_456",
+        userId: "commenter_999",
+        payload: "strictfollowcheck:auto_789",
+      })
+    );
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockSendDirectMessageWithButton).toHaveBeenCalledWith(
+      "decrypted_token",
+      "ig_456",
+      "commenter_999",
+      expect.any(String),
+      "i'm following",
+      "strictfollowcheck:auto_789"
+    );
+  });
+
+  it("delivers the link on tap once the follow is confirmed", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(true);
+    await getProcessor()(
+      createMockPostbackJob({
+        instagramAccountId: "ig_456",
+        userId: "commenter_999",
+        payload: "strictfollowcheck:auto_789",
+      })
+    );
+    expect(mockSendDirectMessageWithButton).not.toHaveBeenCalled();
+    expect(mockSendDirectMessage).toHaveBeenCalled();
   });
 });

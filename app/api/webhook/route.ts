@@ -3,11 +3,12 @@ import { prisma } from "@/lib/db/client";
 import { getDMQueue } from "@/lib/queue/client";
 import {
   parseCommentEvents,
+  parseMessageEvents,
   parsePostbackEvents,
   parseReadEvents,
   verifyWebhookSignature,
 } from "@/lib/meta/webhook";
-import { POSTBACK_JOB_NAME } from "@/lib/queue/client";
+import { MESSAGE_JOB_NAME, POSTBACK_JOB_NAME } from "@/lib/queue/client";
 import { Prisma } from "@/app/generated/prisma/client";
 
 const OPENING_DM_READ_FALLBACK_DELAY_MS = 5 * 60 * 1000;
@@ -111,6 +112,46 @@ export async function POST(request: NextRequest) {
           where: { id: webhookEvent.id },
           data: { workspaceId: account.workspaceId },
         });
+      }
+    }
+
+    // Inbound DMs and Story replies → keyword-triggered autoreply.
+    const messageEvents = parseMessageEvents(
+      payload as Parameters<typeof parseMessageEvents>[0]
+    );
+
+    for (const event of messageEvents) {
+      await queue.add(
+        MESSAGE_JOB_NAME,
+        {
+          instagramAccountId: event.instagramAccountId,
+          messageId: event.messageId,
+          messageText: event.messageText,
+          senderId: event.senderId,
+          isStoryReply: event.isStoryReply,
+        },
+        {
+          // Message ids can contain characters BullMQ rejects in a job id
+          // (":" in particular). base64url encodes into exactly the allowed
+          // alphabet and stays injective, so two distinct mids never collapse
+          // onto one job id.
+          jobId: `message_${event.instagramAccountId}_${Buffer.from(
+            event.messageId
+          ).toString("base64url")}`,
+        }
+      );
+
+      if (!webhookEvent.workspaceId) {
+        const account = await prisma.instagramAccount.findUnique({
+          where: { instagramId: event.instagramAccountId },
+          select: { workspaceId: true },
+        });
+        if (account) {
+          await prisma.webhookEvent.update({
+            where: { id: webhookEvent.id },
+            data: { workspaceId: account.workspaceId },
+          });
+        }
       }
     }
 
