@@ -27,6 +27,7 @@ const createAutomationSchema = z
     matchAnyPost: z.boolean().optional().default(false),
     keywords: z.array(z.string().min(1).max(50)).max(10).optional().default([]),
     matchAnyWord: z.boolean().optional().default(false),
+    dmTriggerEnabled: z.boolean().optional().default(false),
     dmMessage: z.string().min(1).max(1000),
     openingDmEnabled: z.boolean().optional().default(false),
     openingDmMessage: z.string().max(1000).optional().nullable(),
@@ -58,10 +59,18 @@ const createAutomationSchema = z
     isActive: z.boolean().optional().default(true),
     wholeWordMatch: z.boolean().optional().default(true),
   })
-  // A campaign must target a specific post, any post, or the next reel.
+  // A campaign must have at least one trigger: a specific post, any post,
+  // the next reel, or inbound DMs / Story replies.
   .refine(
-    (d) => d.matchAnyPost || d.pendingNextReel || Boolean(d.postId),
-    { message: "Choose which post(s) trigger the campaign", path: ["postId"] }
+    (d) =>
+      d.matchAnyPost ||
+      d.pendingNextReel ||
+      d.dmTriggerEnabled ||
+      Boolean(d.postId),
+    {
+      message: "Choose which post(s) or DMs trigger the campaign",
+      path: ["postId"],
+    }
   )
   // And it must match either specific words or any word.
   .refine((d) => d.matchAnyWord || d.keywords.length >= 1, {
@@ -86,6 +95,7 @@ const updateAutomationSchema = z.object({
   matchAnyPost: z.boolean().optional(),
   keywords: z.array(z.string().min(1).max(50)).max(10).optional(),
   matchAnyWord: z.boolean().optional(),
+  dmTriggerEnabled: z.boolean().optional(),
   dmMessage: z.string().min(1).max(1000).optional(),
   openingDmEnabled: z.boolean().optional(),
   openingDmMessage: z.string().max(1000).optional().nullable(),
@@ -374,6 +384,7 @@ export async function POST(request: NextRequest) {
       matchAnyPost,
       keywords: matchAnyWord ? [] : parsed.data.keywords,
       matchAnyWord,
+      dmTriggerEnabled: parsed.data.dmTriggerEnabled,
       dmMessage: parsed.data.dmMessage,
       openingDmEnabled,
       openingDmMessage: openingDmEnabled
@@ -496,6 +507,23 @@ export async function PATCH(request: NextRequest) {
   if (automationData.matchAnyPost === true || automationData.pendingNextReel === true) {
     automationData.postId = null;
     automationData.postUrl = null;
+  }
+  // A campaign must keep at least one trigger after the update: a post, any
+  // post, the next reel, or inbound DMs / Story replies.
+  const merged = { ...existing, ...automationData };
+  if (
+    !merged.matchAnyPost &&
+    !merged.pendingNextReel &&
+    !merged.dmTriggerEnabled &&
+    !merged.postId
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Choose which post(s) or DMs trigger the campaign",
+      },
+      { status: 400 }
+    );
   }
   // Keep the public-reply variations list and the legacy single field in sync.
   if (automationData.publicReplyMessages !== undefined) {

@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   verifyWebhookSignature,
   parseCommentEvents,
+  parseMessageEvents,
   parseReadEvents,
 } from "../lib/meta/webhook";
 import { createHmac } from "crypto";
@@ -338,5 +339,96 @@ describe("parseReadEvents", () => {
     };
 
     expect(parseReadEvents(payload)).toHaveLength(0);
+  });
+});
+
+describe("parseMessageEvents", () => {
+  function messagingPayload(messaging: unknown[]) {
+    return {
+      object: "instagram",
+      entry: [{ id: "ig_456", time: 1234567890, messaging }],
+    } as Parameters<typeof parseMessageEvents>[0];
+  }
+
+  it("should parse an inbound DM", () => {
+    const payload = messagingPayload([
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        message: { mid: "mid_abc", text: "send me the LINK please" },
+      },
+    ]);
+    expect(parseMessageEvents(payload)).toEqual([
+      {
+        instagramAccountId: "ig_456",
+        messageId: "mid_abc",
+        messageText: "send me the LINK please",
+        senderId: "user_999",
+        isStoryReply: false,
+      },
+    ]);
+  });
+
+  it("should flag a Story reply", () => {
+    const payload = messagingPayload([
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        message: {
+          mid: "mid_story",
+          text: "LINK",
+          reply_to: { story: { id: "story_1", url: "https://cdn/x.mp4" } },
+        },
+      },
+    ]);
+    expect(parseMessageEvents(payload)[0]).toMatchObject({
+      messageId: "mid_story",
+      isStoryReply: true,
+    });
+  });
+
+  it("should ignore echoes of the account's own messages", () => {
+    const payload = messagingPayload([
+      {
+        sender: { id: "ig_456" },
+        recipient: { id: "user_999" },
+        message: { mid: "mid_abc", text: "here's your link", is_echo: true },
+      },
+    ]);
+    expect(parseMessageEvents(payload)).toHaveLength(0);
+  });
+
+  it("should ignore deleted, unsupported, and text-less messages", () => {
+    const payload = messagingPayload([
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        message: { mid: "mid_a", text: "link", is_deleted: true },
+      },
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        message: { mid: "mid_b", text: "link", is_unsupported: true },
+      },
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        message: { mid: "mid_c", attachments: [{ type: "image" }] },
+      },
+      {
+        sender: { id: "user_999" },
+        recipient: { id: "ig_456" },
+        postback: { payload: "reveal:auto_1" },
+      },
+    ]);
+    expect(parseMessageEvents(payload)).toHaveLength(0);
+  });
+
+  it("should ignore non-instagram objects", () => {
+    expect(
+      parseMessageEvents({ object: "page", entry: [] } as Parameters<
+        typeof parseMessageEvents
+      >[0])
+    ).toHaveLength(0);
   });
 });

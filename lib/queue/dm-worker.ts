@@ -2,9 +2,11 @@ import { Worker, type Job } from "bullmq";
 import {
   getDMQueue,
   getRedisConnection,
+  MESSAGE_JOB_NAME,
   POSTBACK_JOB_NAME,
   type DmQueueJob,
   type ProcessCommentJob,
+  type ProcessMessageJob,
   type ProcessPostbackJob,
 } from "./client";
 import { prisma } from "@/lib/db/client";
@@ -594,10 +596,20 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
 async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   const { instagramAccountId, userId, payload, fallback } = job.data;
 
-  const isFollowCheck = payload.startsWith("followcheck:");
+  // `strictfollowcheck:` is the DM/Story-reply path's button: the link is
+  // only ever delivered on a confirmed follow, regardless of the campaign's
+  // requireFollow setting, and an unverifiable status re-prompts instead of
+  // falling open.
+  const isStrictFollowCheck = payload.startsWith("strictfollowcheck:");
+  const isFollowCheck =
+    isStrictFollowCheck || payload.startsWith("followcheck:");
   if (!isFollowCheck && !payload.startsWith("reveal:")) return;
   const automationId = payload.slice(
-    isFollowCheck ? "followcheck:".length : "reveal:".length
+    isStrictFollowCheck
+      ? "strictfollowcheck:".length
+      : isFollowCheck
+        ? "followcheck:".length
+        : "reveal:".length
   );
 
   const automation = await prisma.automation.findFirst({
@@ -656,9 +668,13 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   // be bypassable by just reading the DM and waiting. Following, or
   // unverifiable (null), falls through and delivers the link — fail-open so a
   // real follower is never trapped.
-  if ((isFollowCheck || fallback) && automation.requireFollow) {
+  if (
+    isStrictFollowCheck ||
+    ((isFollowCheck || fallback) && automation.requireFollow)
+  ) {
     const follows = await getUserFollowStatus(accessToken, userId);
-    if (follows === false) {
+    const blocked = isStrictFollowCheck ? follows !== true : follows === false;
+    if (blocked) {
       if (fallback) return;
       const promptText = renderMessageWithoutLink({
         message:
@@ -673,7 +689,9 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
           userId,
           promptText,
           automation.followPromptButtonLabel || "i'm following",
-          `followcheck:${automation.id}`
+          isStrictFollowCheck
+            ? `strictfollowcheck:${automation.id}`
+            : `followcheck:${automation.id}`
         );
       } catch (error) {
         console.log(
@@ -842,9 +860,227 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   }
 }
 
+const DEFAULT_FOLLOW_PROMPT =
+  "Quick favor before I send your link: follow me, then tap the button below and I'll send it right over.";
+
+/**
+ * Keyword-triggered autoreply for inbound DMs and Story replies. Campaigns
+ * with `dmTriggerEnabled` whose keywords match the text reply to the sender.
+ *
+ * This path is ALWAYS follow-gated, independent of the campaign's
+ * requireFollow flag: a confirmed follower gets the link immediately; anyone
+ * else — including an unverifiable status — gets the follow prompt with a
+ * `strictfollowcheck:` button that re-verifies (fail-closed) on tap. Unlike a
+ * comment, a DM is first contact from someone who may never have seen the
+ * post, so failing open here would hand the link to anyone whose status the
+ * API happens not to resolve.
+ */
+async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
+  const { instagramAccountId, messageId, messageText, senderId, isStoryReply } =
+    job.data;
+
+  const automations = await prisma.automation.findMany({
+    where: {
+      dmTriggerEnabled: true,
+      isActive: true,
+      instagramAccount: { instagramId: instagramAccountId },
+    },
+    include: {
+      instagramAccount: true,
+      workspace: true,
+      trackedLinks: {
+        select: { slug: true, label: true, destinationUrl: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const dedupeId = `dm:${messageId}`;
+  const sourceLabel = isStoryReply ? "(story reply)" : "(dm)";
+
+  for (const automation of automations) {
+    const matchResult = automation.matchAnyWord
+      ? { matched: true, matchedKeyword: null }
+      : matchKeywords(
+          messageText,
+          automation.keywords,
+          automation.wholeWordMatch
+        );
+    if (!matchResult.matched) continue;
+
+    const logKey = {
+      automationId_commentId: { automationId: automation.id, commentId: dedupeId },
+    };
+    const existingLog = await prisma.dmLog.findUnique({ where: logKey });
+    // A retry must never send a second reply to the same message.
+    if (
+      existingLog?.status === "SENT" ||
+      existingLog?.status === "SKIPPED_PLAN_LIMIT"
+    ) {
+      continue;
+    }
+
+    const logBase = {
+      workspaceId: automation.workspaceId,
+      automationId: automation.id,
+      instagramAccountId: automation.instagramAccountId,
+      commenterId: senderId,
+      commentText: `${sourceLabel} ${messageText}`,
+      commentId: dedupeId,
+      matchedKeyword: matchResult.matchedKeyword,
+    };
+    const failLog = (errorMessage: string) =>
+      prisma.dmLog.upsert({
+        where: logKey,
+        create: { ...logBase, status: "FAILED", errorMessage },
+        update: { status: "FAILED", errorMessage },
+      });
+
+    if (!automation.instagramAccount.accessToken) {
+      await failLog("No Instagram access token available");
+      continue;
+    }
+    let accessToken: string;
+    try {
+      accessToken = decryptToken(automation.instagramAccount.accessToken);
+    } catch {
+      await failLog("Failed to decrypt Instagram access token");
+      continue;
+    }
+
+    // The messages webhook carries only the sender's IGSID; reuse a name
+    // captured on an earlier comment so {username} still renders.
+    const priorLog = await prisma.dmLog.findFirst({
+      where: { automationId: automation.id, commenterId: senderId },
+      select: { commenterName: true },
+    });
+    const commenterName = priorLog?.commenterName ?? null;
+
+    const follows = await getUserFollowStatus(accessToken, senderId);
+    const sendFollowPrompt = follows !== true;
+
+    const usage = await reserveWorkspaceDMSend(automation.workspaceId);
+    if (!usage.allowed) {
+      const errorMessage = `Monthly DM limit reached (${usage.limit})`;
+      await prisma.dmLog.upsert({
+        where: logKey,
+        create: { ...logBase, status: "SKIPPED_PLAN_LIMIT", errorMessage },
+        update: { status: "SKIPPED_PLAN_LIMIT", errorMessage },
+      });
+      continue;
+    }
+
+    try {
+      if (sendFollowPrompt) {
+        await sendDirectMessageWithButton(
+          accessToken,
+          automation.instagramAccount.instagramId,
+          senderId,
+          renderMessageWithoutLink({
+            message: automation.followPromptMessage || DEFAULT_FOLLOW_PROMPT,
+            commenterName,
+          }),
+          automation.followPromptButtonLabel || "i'm following",
+          `strictfollowcheck:${automation.id}`
+        );
+      } else if (automation.trackedLinks.length > 0) {
+        const bodyText =
+          renderMessageWithoutLink({
+            message: automation.dmMessage,
+            commenterName,
+          }) || "Here's your link:";
+        try {
+          await sendDirectMessageWithLinkButton(
+            accessToken,
+            automation.instagramAccount.instagramId,
+            senderId,
+            bodyText,
+            buildLinkButtons(automation.trackedLinks, automation.linkButtonLabel)
+          );
+        } catch (buttonError) {
+          console.log(
+            "[DM Worker] Button template rejected in message trigger, falling back to inline link:",
+            formatError(buttonError)
+          );
+          await sendDirectMessage(
+            accessToken,
+            automation.instagramAccount.instagramId,
+            senderId,
+            buildInlineLinkFallback(
+              automation.dmMessage,
+              commenterName,
+              automation.trackedLinks,
+              bodyText
+            )
+          );
+        }
+      } else {
+        await sendDirectMessage(
+          accessToken,
+          automation.instagramAccount.instagramId,
+          senderId,
+          renderMessageWithTracking({
+            message: automation.dmMessage,
+            commenterName,
+            trackedLinks: automation.trackedLinks,
+          })
+        );
+      }
+
+      const sentLog = await prisma.dmLog.upsert({
+        where: logKey,
+        create: {
+          ...logBase,
+          commenterName,
+          status: "SENT",
+          dmSentAt: new Date(),
+          errorMessage: sendFollowPrompt ? "Follow prompt sent; link pending" : null,
+        },
+        update: {
+          status: "SENT",
+          dmSentAt: new Date(),
+          errorMessage: sendFollowPrompt ? "Follow prompt sent; link pending" : null,
+        },
+      });
+
+      if (!sendFollowPrompt) {
+        await enqueuePush({
+          kind: "new_lead",
+          workspaceId: automation.workspaceId,
+          title: "New lead",
+          body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+          data: { deepLink: `/logs?highlight=${sentLog.id}` },
+        }).catch((pushError) =>
+          console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+        );
+      }
+    } catch (error) {
+      await releaseWorkspaceDMReservation(
+        automation.workspaceId,
+        usage.periodStart
+      );
+      const failedLog = await failLog(formatError(error));
+      await enqueuePush({
+        kind: "send_failure",
+        workspaceId: automation.workspaceId,
+        title: "DM send failed",
+        body: `A DM failed to send for "${automation.name}"`,
+        data: { deepLink: `/logs?highlight=${failedLog.id}` },
+      }).catch((pushError) =>
+        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+      );
+      throw error;
+    }
+  }
+}
+
 async function processJob(job: Job<DmQueueJob>): Promise<void> {
   if (job.name === POSTBACK_JOB_NAME) {
     return processPostback(job as Job<ProcessPostbackJob>);
+  }
+  if (job.name === MESSAGE_JOB_NAME) {
+    return processMessage(job as Job<ProcessMessageJob>);
   }
   return processComment(job as Job<ProcessCommentJob>);
 }

@@ -70,7 +70,26 @@ interface WebhookEntry {
     recipient?: { id?: string };
     postback?: { mid?: string; title?: string; payload?: string };
     read?: { watermark?: number; seq?: number };
+    message?: {
+      mid?: string;
+      text?: string;
+      is_echo?: boolean;
+      is_deleted?: boolean;
+      is_unsupported?: boolean;
+      // Present when the DM is a reply to one of the account's Stories.
+      reply_to?: { story?: { id?: string; url?: string } };
+      attachments?: Array<{ type?: string }>;
+    };
   }>;
+}
+
+export interface WebhookMessageEvent {
+  instagramAccountId: string;
+  messageId: string;
+  messageText: string;
+  senderId: string;
+  // True when Instagram delivered this DM as a reply to the account's Story.
+  isStoryReply: boolean;
 }
 
 export interface WebhookPostbackEvent {
@@ -159,6 +178,52 @@ export function parsePostbackEvents(
         userId,
         payload: postbackPayload,
         mid: messaging.postback?.mid,
+      });
+    }
+  }
+
+  return events;
+}
+
+/**
+ * Parse inbound Instagram DMs (including Story replies, which Instagram
+ * delivers as DMs) out of a webhook payload. These drive the keyword-triggered
+ * autoreply for campaigns with `dmTriggerEnabled`.
+ *
+ * Echoes (messages the account itself sent, including our own autoreplies),
+ * deletions, and attachment-only messages with no text are dropped here so
+ * the worker never sees them — an echo would otherwise let an autoreply
+ * containing its own keyword trigger itself.
+ */
+export function parseMessageEvents(
+  payload: WebhookPayload
+): WebhookMessageEvent[] {
+  const events: WebhookMessageEvent[] = [];
+
+  if (payload.object !== "instagram") return events;
+
+  for (const entry of payload.entry ?? []) {
+    for (const messaging of entry.messaging ?? []) {
+      const message = messaging.message;
+      if (!message) continue;
+      if (message.is_echo || message.is_deleted || message.is_unsupported) {
+        continue;
+      }
+
+      const text = message.text?.trim();
+      const messageId = message.mid;
+      const senderId = messaging.sender?.id;
+      const accountId = entry.id ?? messaging.recipient?.id;
+
+      if (!text || !messageId || !senderId || !accountId) continue;
+      if (senderId === accountId) continue;
+
+      events.push({
+        instagramAccountId: accountId,
+        messageId,
+        messageText: text,
+        senderId,
+        isStoryReply: Boolean(message.reply_to?.story),
       });
     }
   }

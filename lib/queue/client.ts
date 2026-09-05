@@ -49,9 +49,23 @@ export interface ProcessPostbackJob {
   fallback?: boolean;
 }
 
-export type DmQueueJob = ProcessCommentJob | ProcessPostbackJob;
+// An inbound DM or Story reply. Campaigns with `dmTriggerEnabled` whose
+// keywords match the text reply to the sender (follow-gated, see worker).
+export interface ProcessMessageJob {
+  instagramAccountId: string;
+  messageId: string;
+  messageText: string;
+  senderId: string;
+  isStoryReply?: boolean;
+}
+
+export type DmQueueJob =
+  | ProcessCommentJob
+  | ProcessPostbackJob
+  | ProcessMessageJob;
 
 export const POSTBACK_JOB_NAME = "process-postback";
+export const MESSAGE_JOB_NAME = "process-message";
 
 let dmQueue: Queue<DmQueueJob> | null = null;
 
