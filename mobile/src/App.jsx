@@ -36,16 +36,27 @@ import "../global.css";
 const LOCK_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 
 function RootNavigation() {
-  const { isLoading, isSignedIn, signOut } = useAuth();
+  const { isLoading, isSignedIn, pendingInvitation, signOut } = useAuth();
 
   const [showLock, setShowLock] = useState(false);
   const [showPushPrimer, setShowPushPrimer] = useState(false);
   const backgroundedAtRef = useRef(null);
+  const initialLockCheckedRef = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
     BootSplash.hide({ fade: true }).catch(() => {});
   }, [isLoading]);
+
+  useEffect(() => {
+    if (isLoading || initialLockCheckedRef.current) return;
+    initialLockCheckedRef.current = true;
+    if (isSignedIn) {
+      isBiometricLockEnabled().then((enabled) => {
+        if (enabled) setShowLock(true);
+      });
+    }
+  }, [isLoading, isSignedIn]);
 
   // Android notification channels + tap-to-deep-link, registered once.
   useEffect(() => {
@@ -107,7 +118,15 @@ function RootNavigation() {
 
   return (
     <>
-      <NavigationContainer ref={navigationRef} linking={linking}>
+      <NavigationContainer
+        ref={navigationRef}
+        linking={linking}
+        onReady={() => {
+          if (isSignedIn && pendingInvitation) {
+            navigationRef.navigate("InviteAccept", { token: pendingInvitation });
+          }
+        }}
+      >
         <RootNavigator />
       </NavigationContainer>
       {showLock ? (

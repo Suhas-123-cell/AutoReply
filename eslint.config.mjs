@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // The native app has its own React Native ESLint configuration and
+    // `mobile/npm run lint`; Next's DOM rules misclassify React Native Image.
+    "mobile/**",
     "next-env.d.ts",
   ]),
 ]);

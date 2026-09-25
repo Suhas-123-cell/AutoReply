@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   Text,
@@ -114,7 +115,7 @@ export default function SignInScreen() {
           ephemeralWebSession: false,
         });
       } else {
-        await InAppBrowser.open(authorizeUrl);
+        await Linking.openURL(authorizeUrl);
       }
     } catch (err) {
       setError(

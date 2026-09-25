@@ -1,9 +1,11 @@
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuth } from "../auth/AuthContext";
 import AppTabs from "./AppTabs";
 import AuthStack from "./AuthStack";
 import IgConnectScreen from "../../app/ig-connect";
 import InviteAcceptScreen from "../../app/invite/[token]";
+import BillingReturnScreen from "../../app/billing";
 
 const Stack = createNativeStackNavigator();
 
@@ -23,21 +25,32 @@ const Stack = createNativeStackNavigator();
  * stay reachable regardless of sign-in state.
  */
 export default function RootNavigator() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isSwitching, isOffline, workspace, refreshSession } = useAuth();
+  if (isSwitching) return <View className="flex-1 items-center justify-center bg-background"><ActivityIndicator /></View>;
 
   return (
+    <View className="flex-1">
+    {isOffline ? (
+      <Pressable onPress={() => refreshSession().catch(() => {})} className="bg-surface px-4 py-2">
+        <Text className="text-center text-warning">
+          Offline — showing saved totals. Tap to reconnect.
+        </Text>
+      </Pressable>
+    ) : null}
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {isSignedIn ? (
-        <Stack.Screen name="AppTabs" component={AppTabs} />
+        <Stack.Screen name="AppTabs" navigationKey={workspace?.id} component={AppTabs} />
       ) : (
         <Stack.Screen name="AuthStack" component={AuthStack} />
       )}
       <Stack.Screen name="IgConnect" component={IgConnectScreen} options={{ presentation: "modal" }} />
+      <Stack.Screen name="BillingReturn" component={BillingReturnScreen} />
       <Stack.Screen
         name="InviteAccept"
         component={InviteAcceptScreen}
         options={{ presentation: "modal" }}
       />
     </Stack.Navigator>
+    </View>
   );
 }
