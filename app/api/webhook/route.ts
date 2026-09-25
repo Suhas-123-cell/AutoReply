@@ -5,13 +5,10 @@ import {
   parseCommentEvents,
   parseMessageEvents,
   parsePostbackEvents,
-  parseReadEvents,
   verifyWebhookSignature,
 } from "@/lib/meta/webhook";
 import { MESSAGE_JOB_NAME, POSTBACK_JOB_NAME } from "@/lib/queue/client";
 import { Prisma } from "@/app/generated/prisma/client";
-
-const OPENING_DM_READ_FALLBACK_DELAY_MS = 5 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -103,7 +100,9 @@ export async function POST(request: NextRequest) {
           source: "WEBHOOK",
         },
         {
-          jobId: `comment_${event.instagramAccountId}_${event.commentId}`,
+          jobId: `comment_${event.instagramAccountId}_${Buffer.from(
+            event.commentId
+          ).toString("base64url")}`,
         }
       );
 
@@ -129,6 +128,7 @@ export async function POST(request: NextRequest) {
           messageText: event.messageText,
           senderId: event.senderId,
           isStoryReply: event.isStoryReply,
+          interactionTimestamp: event.interactionTimestamp,
         },
         {
           // Message ids can contain characters BullMQ rejects in a job id
@@ -168,6 +168,7 @@ export async function POST(request: NextRequest) {
           userId: event.userId,
           payload: event.payload,
           mid: event.mid,
+          interactionTimestamp: event.interactionTimestamp,
         },
         {
           // BullMQ forbids ":" in custom job ids, and the payload is
@@ -179,56 +180,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If a user reads the opening DM and never taps the button, deliver the
-    // same next-step DM after five minutes. The worker no-ops this delayed job
-    // if a real button tap has already delivered the reveal.
-    const readEvents = parseReadEvents(
-      payload as Parameters<typeof parseReadEvents>[0]
-    );
-
-    for (const event of readEvents) {
-      const openingLogs = await prisma.dmLog.findMany({
-        where: {
-          commenterId: event.userId,
-          status: "SENT",
-          automation: {
-            isActive: true,
-            openingDmEnabled: true,
-            instagramAccount: {
-              instagramId: event.instagramAccountId,
-            },
-          },
-        },
-        select: {
-          automation: {
-            select: {
-              id: true,
-            },
-          },
-        },
-      });
-
-      const scheduledAutomationIds = new Set<string>();
-      for (const log of openingLogs) {
-        const automation = log.automation;
-        if (scheduledAutomationIds.has(automation.id)) continue;
-        scheduledAutomationIds.add(automation.id);
-
-        await queue.add(
-          POSTBACK_JOB_NAME,
-          {
-            instagramAccountId: event.instagramAccountId,
-            userId: event.userId,
-            payload: `reveal:${automation.id}`,
-            fallback: true,
-          },
-          {
-            delay: OPENING_DM_READ_FALLBACK_DELAY_MS,
-            jobId: `read_fallback_${event.instagramAccountId}_${event.userId}_${automation.id}`,
-          }
-        );
-      }
-    }
+    // Read receipts do not open the messaging window. Only messages and
+    // explicit button interactions above may enqueue a reply.
 
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },

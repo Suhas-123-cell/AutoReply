@@ -1,8 +1,12 @@
+// Loads .env when run outside a container; a no-op on Northflank, where env
+// vars are injected and .env is excluded by .dockerignore.
+import "dotenv/config";
 import { createDMWorker } from "@/lib/queue/dm-worker";
 import { createPushWorker } from "@/lib/queue/push-worker";
 import { recordWorkerHeartbeat } from "@/lib/ops/worker-health";
 import { reconcileComments } from "@/lib/polling/comment-reconciler";
 import os from "node:os";
+import { attachNextPosts } from "@/lib/polling/next-post";
 
 const worker = createDMWorker();
 const pushWorker = createPushWorker();
@@ -32,23 +36,45 @@ async function heartbeat() {
 void heartbeat();
 const heartbeatTimer = setInterval(() => void heartbeat(), HEARTBEAT_INTERVAL_MS);
 
+let pollRunning = false;
 async function poll() {
+  if (pollRunning) return;
+  pollRunning = true;
   try {
+    await attachNextPosts();
     await reconcileComments();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[DM Worker] Comment reconciliation failed:", message);
+  } finally {
+    pollRunning = false;
   }
 }
 
-// Kick off one sweep shortly after boot, then on a fixed interval.
-setTimeout(() => void poll(), 10_000);
+// Check new posts every minute; catch early comments immediately after binding.
+let attachmentRunning = false;
+async function attach() {
+  if (attachmentRunning || pollRunning) return;
+  attachmentRunning = true;
+  try {
+    const result = await attachNextPosts();
+    if (result.bound > 0) await poll();
+  } catch (error) {
+    console.error("[DM Worker] Next-post check failed:", error);
+  } finally {
+    attachmentRunning = false;
+  }
+}
+const attachmentTimer = setInterval(() => void attach(), 60_000);
+const startupTimer = setTimeout(() => void poll(), 1_000);
 const pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
 
 async function shutdown(signal: string) {
   console.log(`[DM Worker] ${signal} received, closing worker`);
   clearInterval(heartbeatTimer);
   clearInterval(pollTimer);
+  clearInterval(attachmentTimer);
+  clearTimeout(startupTimer);
   await worker.close();
   await pushWorker.close();
   process.exit(0);

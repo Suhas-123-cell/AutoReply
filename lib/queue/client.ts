@@ -35,8 +35,7 @@ export interface ProcessCommentJob {
   // that doesn't have it degrade gracefully — the worker's age check is
   // simply skipped when this is absent, never treated as "instantly stale".
   commentTimestamp?: number;
-  // Which path enqueued this comment. Recorded in the shared ProcessedComment
-  // dedup store so the reconciler can tell webhook- from polling-caught comments.
+  // Which path enqueued this comment, retained for diagnostics.
   source?: CommentSource;
 }
 
@@ -47,6 +46,7 @@ export interface ProcessPostbackJob {
   payload: string;
   mid?: string;
   fallback?: boolean;
+  interactionTimestamp?: number;
 }
 
 // An inbound DM or Story reply. Campaigns with `dmTriggerEnabled` whose
@@ -57,6 +57,7 @@ export interface ProcessMessageJob {
   messageText: string;
   senderId: string;
   isStoryReply?: boolean;
+  interactionTimestamp?: number;
 }
 
 export type DmQueueJob =

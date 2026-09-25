@@ -365,6 +365,7 @@ describe("parseMessageEvents", () => {
         messageText: "send me the LINK please",
         senderId: "user_999",
         isStoryReply: false,
+        interactionTimestamp: 1234567890000,
       },
     ]);
   });

@@ -176,9 +176,8 @@ async function sweepCampaign(
       continue;
     }
 
-    // Keep only comments that (a) aren't the account's own, (b) match the
-    // keyword, and (c) have no reply from the account owner yet.
-    const needsAction = comments.filter((c) => {
+    // Keep comments that aren't the account's own and match the keyword.
+    const candidates = comments.filter((c) => {
       const authorId = c.from?.id;
       if (!authorId || authorId === account.instagramId) return false;
 
@@ -189,57 +188,74 @@ async function sweepCampaign(
       if (!matched) return false;
       stat.matched += 1;
 
-      const ownerReplied = (c.replies?.data ?? []).some(
-        (r) => r.from?.id === account.instagramId
+      return true;
+    });
+    if (candidates.length === 0) continue;
+
+    const knownLogs = await prisma.dmLog.findMany({
+      where: {
+        automationId: automation.id,
+        commentId: { in: candidates.map((c) => c.id) },
+      },
+      select: { commentId: true, status: true, publicReplySentAt: true },
+    });
+    const logByComment = new Map(knownLogs.map((log) => [log.commentId, log]));
+    const ownerReplyObserved: string[] = [];
+    const needsAction = candidates.filter((comment) => {
+      const log = logByComment.get(comment.id);
+      const ownerReplied = (comment.replies?.data ?? []).some(
+        (reply) => reply.from?.id === account.instagramId
       );
       if (ownerReplied) {
         stat.alreadyReplied += 1;
-        return false;
+        // No local log means this was a manual owner reply. Leave it alone.
+        if (!log) return false;
+        // A failed/pending DM still needs retrying, but observing the account's
+        // reply proves the public leg is complete and prevents a duplicate.
+        if (automation.publicReplyEnabled && !log.publicReplySentAt) {
+          ownerReplyObserved.push(comment.id);
+        }
+        return log.status !== "SENT";
       }
-      return true;
+      if (log?.status !== "SENT") return true;
+      return automation.publicReplyEnabled && !log.publicReplySentAt;
     });
-    if (needsAction.length === 0) continue;
 
-    // Second guard against races: skip comments this campaign has already fully
-    // handled. "Fully handled" depends on the campaign: if it posts a public
-    // reply, the completion signal is publicReplySentAt (a DM alone is not
-    // enough — the reply still has to land); otherwise a SENT DM is enough. This
-    // is what lets a comment whose DM sent but whose public reply failed come
-    // back and retry the reply.
-    const handled = await prisma.dmLog.findMany({
-      where: {
-        automationId: automation.id,
-        commentId: { in: needsAction.map((c) => c.id) },
-        ...(automation.publicReplyEnabled
-          ? { publicReplySentAt: { not: null } }
-          : { status: "SENT" }),
-      },
-      select: { commentId: true },
-    });
-    const handledSet = new Set(handled.map((h) => h.commentId));
+    if (ownerReplyObserved.length > 0) {
+      await prisma.dmLog.updateMany({
+        where: {
+          automationId: automation.id,
+          commentId: { in: ownerReplyObserved },
+          publicReplySentAt: null,
+        },
+        data: { publicReplySentAt: new Date(), publicReplyError: null },
+      });
+    }
 
     // Oldest first, so whoever commented earliest gets answered first, capped.
     const fresh = needsAction
-      .filter((c) => !handledSet.has(c.id))
       .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
       .slice(0, MAX_NEW_PER_SWEEP);
 
     for (const c of fresh) {
-      // No deterministic jobId here: a retained completed/failed job from an
-      // earlier sweep would otherwise be treated as a duplicate and silently
-      // drop this add, so the comment would never be retried. Dedup is handled
-      // above (owner-reply + DmLog guards) and the worker is idempotent
-      // (publicReplySentAt / SENT), so re-processing a comment is safe.
-      await queue.add("process-comment", {
-        instagramAccountId: account.instagramId,
-        commentId: c.id,
-        commentText: c.text ?? "",
-        commenterId: c.from!.id,
-        commenterName: c.from?.username,
-        mediaId,
-        commentTimestamp: Math.floor(Date.parse(c.timestamp) / 1000),
-        source: "POLLING",
-      });
+      await queue.add(
+        "process-comment",
+        {
+          instagramAccountId: account.instagramId,
+          commentId: c.id,
+          commentText: c.text ?? "",
+          commenterId: c.from!.id,
+          commenterName: c.from?.username,
+          mediaId,
+          commentTimestamp: Math.floor(Date.parse(c.timestamp) / 1000),
+          source: "POLLING",
+        },
+        {
+          // Same id as the webhook path, so a webhook and polling sweep racing
+          // on the same comment collapse into one worker job.
+          jobId: `comment_${account.instagramId}_${Buffer.from(c.id).toString("base64url")}`,
+        }
+      );
       stat.enqueued += 1;
     }
   }
