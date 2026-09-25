@@ -1,0 +1,183 @@
+# AutoReply — production stack for one AWS EC2 server. See docs/DEPLOY_AWS.md.
+# Run: docker compose -f docker-compose.prod.yml up -d --build
+
+x-app: &app
+  image: autoreply-app
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    NEXTAUTH_URL: https://${DOMAIN:?set DOMAIN in .env}
+    DATABASE_URL: postgresql://autoreply:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/autoreply
+    REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+  init: true
+  mem_limit: 1200m
+  pids_limit: 256
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+  stop_grace_period: 30s
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: autoreply
+      POSTGRES_USER: autoreply
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256m
+    mem_limit: 1000m
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoreply"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # AOF persistence so queued DMs survive a restart.
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping 2>/dev/null | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    build: .
+    command: npx prisma migrate deploy
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    pull_policy: never
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    pull_policy: never
+    mem_limit: 900m
+    command: npm run worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 192m
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    restart: unless-stopped
+
+  # Replaces vercel.json's crons and creates a local PostgreSQL dump every day.
+  # EBS snapshots/S3 copies must still protect these dumps from disk loss.
+  cron:
+    image: postgres:16-alpine
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./backups:/backups
+    command:
+      - sh
+      - -c
+      - |
+        cat > /etc/crontabs/root <<'EOF'
+        0 3 * * * pg_dump -h postgres -U autoreply autoreply | gzip > /backups/autoreply-$$(date +\%F-\%H\%M\%S).sql.gz
+        15 3 * * * find /backups -type f -name 'autoreply-*.sql.gz' -mtime +7 -delete
+        0 5 * * * wget -qO- --header "Authorization: Bearer $$CRON_SECRET" http://api:3000/api/cron/refresh-tokens
+        0 6 * * * wget -qO- --header "Authorization: Bearer $$CRON_SECRET" http://api:3000/api/cron/attach-next-reel
+        0 7 * * * wget -qO- --header "Authorization: Bearer $$CRON_SECRET" http://api:3000/api/cron/snapshot-followers
+        EOF
+        exec crond -f -l 8
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    mem_limit: 128m
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
