@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Resend from "next-auth/providers/resend";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -60,8 +61,10 @@ export async function getCurrentWorkspaceId(): Promise<string | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
-  const workspace = await getPrimaryWorkspace(userId);
+  const requestedWorkspaceId = (await headers()).get("x-workspace-id");
+  const workspace = await getPrimaryWorkspace(userId, requestedWorkspaceId);
   if (workspace) return workspace.id;
+  if (requestedWorkspaceId) return null;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },

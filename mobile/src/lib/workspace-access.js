@@ -3,7 +3,7 @@
  * semantics on the mobile side, without importing server code. Gate any
  * create/edit/delete/invite/role-change UI on this (OWNER or ADMIN only).
  */
-const ROLE_ORDER = { MEMBER: 1, ADMIN: 2, OWNER: 3 };
+const ROLE_ORDER = { MEMBER: 1, EDITOR: 1, ADMIN: 2, OWNER: 3 };
 
 export function canManageWorkspace(role) {
   return Boolean(role) && ROLE_ORDER[role] >= ROLE_ORDER.ADMIN;
@@ -13,4 +13,8 @@ export function canManageWorkspace(role) {
 // as who can see/change the Stripe customer.
 export function canManageBilling(role) {
   return role === "OWNER";
+}
+
+export function canManageCampaigns(role) {
+  return role === "EDITOR" || canManageWorkspace(role);
 }

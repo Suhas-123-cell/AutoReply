@@ -5,7 +5,12 @@ jest.mock("../../auth/session-store", () => ({
   clearSession: jest.fn().mockResolvedValue(undefined),
 }));
 
-let apiFetch, ApiError, setAuthToken, registerUnauthorizedHandler;
+let apiFetch,
+  ApiError,
+  setAuthToken,
+  setWorkspaceId,
+  setOfflineMode,
+  registerUnauthorizedHandler;
 
 beforeEach(() => {
   jest.resetModules();
@@ -21,11 +26,12 @@ beforeEach(() => {
   // state like inMemoryToken) via the CJS registry Babel transforms this
   // file's ESM syntax into; dynamic import() bypasses that registry under
   // Jest's default (non --experimental-vm-modules) setup.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate, see comment above
   const client = require("../client");
   apiFetch = client.apiFetch;
   ApiError = client.ApiError;
   setAuthToken = client.setAuthToken;
+  setWorkspaceId = client.setWorkspaceId;
+  setOfflineMode = client.setOfflineMode;
   registerUnauthorizedHandler = client.registerUnauthorizedHandler;
 });
 
@@ -53,9 +59,9 @@ describe("apiFetch envelope handling", () => {
       jsonResponse(400, { success: false, error: "Invalid input" })
     );
 
-    await expect(apiFetch("/api/automations", { method: "POST", body: {} })).rejects.toMatchObject(
-      { status: 400, message: "Invalid input" }
-    );
+    await expect(
+      apiFetch("/api/automations", { method: "POST", body: {} })
+    ).rejects.toMatchObject({ status: 400, message: "Invalid input" });
   });
 
   it("carries the response's data field on the thrown ApiError", async () => {
@@ -78,7 +84,9 @@ describe("apiFetch envelope handling", () => {
 
   it("attaches the Authorization header once a token is set", async () => {
     setAuthToken("session_abc");
-    global.fetch.mockResolvedValue(jsonResponse(200, { success: true, data: null }));
+    global.fetch.mockResolvedValue(
+      jsonResponse(200, { success: true, data: null })
+    );
 
     await apiFetch("/api/mobile/auth/session");
 
@@ -88,12 +96,61 @@ describe("apiFetch envelope handling", () => {
 
   it("omits the Authorization header when signed out", async () => {
     setAuthToken(null);
-    global.fetch.mockResolvedValue(jsonResponse(200, { success: true, data: null }));
+    global.fetch.mockResolvedValue(
+      jsonResponse(200, { success: true, data: null })
+    );
 
-    await apiFetch("/api/mobile/auth/request-code", { method: "POST", body: { email: "a@b.com" } });
+    await apiFetch("/api/mobile/auth/request-code", {
+      method: "POST",
+      body: { email: "a@b.com" },
+    });
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
+  });
+
+  it("sends the selected workspace and mobile client headers", async () => {
+    setWorkspaceId("workspace_123");
+    global.fetch.mockResolvedValue(
+      jsonResponse(200, { success: true, data: null })
+    );
+
+    await apiFetch("/api/automations");
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers["x-workspace-id"]).toBe("workspace_123");
+    expect(options.headers["X-AutoReply-Client"]).toBe("mobile");
+  });
+
+  it("blocks mutations while using the offline cache", async () => {
+    setOfflineMode(true);
+
+    await expect(
+      apiFetch("/api/automations", { method: "POST", body: {} })
+    ).rejects.toMatchObject({
+      status: 0,
+      message: "Reconnect before making changes.",
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a response started before the workspace changed", async () => {
+    let resolveFetch;
+    global.fetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    setWorkspaceId("workspace_a");
+    const pending = apiFetch("/api/dashboard/stats");
+    setWorkspaceId("workspace_b");
+    resolveFetch(jsonResponse(200, { success: true, data: { stale: true } }));
+
+    await expect(pending).rejects.toMatchObject({
+      status: 0,
+      message: "Workspace changed; please retry.",
+    });
   });
 });
 
@@ -121,7 +178,9 @@ describe("401 single-flight handling", () => {
 
 describe("per-route timeout", () => {
   it("passes an AbortSignal on every request", async () => {
-    global.fetch.mockResolvedValue(jsonResponse(200, { success: true, data: null }));
+    global.fetch.mockResolvedValue(
+      jsonResponse(200, { success: true, data: null })
+    );
 
     await apiFetch("/api/instagram/overview");
 

@@ -8,15 +8,12 @@ import {
 
 const setAccessSchema = z.object({
   memberId: z.string().min(1),
+  unrestricted: z.boolean().default(false),
   instagramAccountIds: z.array(z.string().min(1)).max(200).default([]),
   telegramAccountIds: z.array(z.string().min(1)).max(200).default([]),
 });
 
-// Wholesale replace: delete this member's existing MemberAccountAccess rows
-// and recreate from the two ID arrays. Simpler and less error-prone than a
-// diff/patch API for a set that's edited via checkboxes, not incrementally —
-// both arrays empty means "unrestricted" (same as never having scoped this
-// member at all, see getAccountAccessScope's doc comment).
+// Explicit unrestricted mode distinguishes every account from no accounts.
 export async function PUT(request: NextRequest) {
   const context = await getCurrentWorkspaceContext();
   if (!context) {
@@ -50,6 +47,9 @@ export async function PUT(request: NextRequest) {
     );
   }
 
+  if (member.role === "OWNER" || member.role === "ADMIN") {
+    return NextResponse.json({ success: false, error: "Managers already have access to every account" }, { status: 400 });
+  }
   const [instagramAccounts, telegramAccounts] = await Promise.all([
     parsed.data.instagramAccountIds.length
       ? prisma.instagramAccount.findMany({
@@ -71,12 +71,17 @@ export async function PUT(request: NextRequest) {
       : Promise.resolve([]),
   ]);
 
+  if (instagramAccounts.length !== new Set(parsed.data.instagramAccountIds).size ||
+      telegramAccounts.length !== new Set(parsed.data.telegramAccountIds).size) {
+    return NextResponse.json({ success: false, error: "Every selected account must belong to this workspace" }, { status: 400 });
+  }
   await prisma.$transaction([
+    prisma.workspaceMember.update({ where: { id: member.id }, data: { accountAccessRestricted: !parsed.data.unrestricted } }),
     prisma.memberAccountAccess.deleteMany({
       where: { workspaceMemberId: member.id },
     }),
     prisma.memberAccountAccess.createMany({
-      data: [
+      data: parsed.data.unrestricted ? [] : [
         ...instagramAccounts.map((a) => ({
           workspaceMemberId: member.id,
           instagramAccountId: a.id,

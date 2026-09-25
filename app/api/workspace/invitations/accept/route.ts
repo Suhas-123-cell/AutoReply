@@ -60,32 +60,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await prisma.$transaction([
-    prisma.workspaceMember.upsert({
-      where: {
-        workspaceId_userId: {
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.workspaceInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+        },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+      });
+      if (claimed.count !== 1) throw new Error("INVITATION_ALREADY_CLAIMED");
+      await tx.workspaceMember.upsert({
+        where: {
+          workspaceId_userId: {
+            workspaceId: invitation.workspaceId,
+            userId,
+          },
+        },
+        create: {
           workspaceId: invitation.workspaceId,
           userId,
+          role: invitation.role,
         },
-      },
-      create: {
-        workspaceId: invitation.workspaceId,
-        userId,
-        role: invitation.role,
-      },
-      update: { role: invitation.role },
-    }),
-    prisma.workspaceInvitation.update({
-      where: { id: invitation.id },
-      data: { status: "ACCEPTED", acceptedAt: new Date() },
-    }),
-  ]);
+        update: {}, // Reopening an invitation must never downgrade an existing owner.
+      });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVITATION_ALREADY_CLAIMED") {
+      return NextResponse.json(
+        { success: false, error: "Invitation is no longer available" },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
 
   return NextResponse.json({
     success: true,
     data: {
       workspaceName: invitation.workspace.name,
+      workspaceId: invitation.workspaceId,
     },
   });
 }
-
