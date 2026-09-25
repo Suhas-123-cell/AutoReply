@@ -21,18 +21,15 @@ export interface PlanDefinition {
   stripePriceEnvVar: string | null;
 }
 
-// Must stay within PostgreSQL int4 range, since dmsSentThisPeriod is an Int
-// column compared against this value. Doubles as both the self-hosted (no
-// Stripe key) fallback and paid plans' "Unlimited DMs" marketing claim: real
-// throughput is already bounded by Meta/Telegram's own per-account API rate
-// limits, so this ceiling is never actually reachable in practice.
+// Must stay within PostgreSQL int4 range. Used only by self-hosted deployments
+// where billing limits are disabled.
 export const UNLIMITED = 2_000_000_000;
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: {
     id: "free",
     name: "Free",
-    monthlyDmLimit: 5_000,
+    monthlyDmLimit: 500,
     maxConnectedAccounts: 1,
     priceUsd: 0,
     stripePriceEnvVar: null,
@@ -40,13 +37,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   starter: {
     id: "starter",
     name: "Starter",
-    // Marketed as "Unlimited DMs" — a soft abuse/circuit-breaker ceiling,
-    // not a real usage cap (~46% of the 2-account Meta rate-limit ceiling;
-    // see the rate limiter's 750/hr-per-account cap in
-    // lib/utils/rate-limiter.ts for where the real hard stop is). See
-    // canConnectAnotherAccount in ./usage.ts for the limit that actually
-    // matters to buyers.
-    monthlyDmLimit: 500_000,
+    monthlyDmLimit: 25_000,
     maxConnectedAccounts: 2,
     priceUsd: 19,
     stripePriceEnvVar: "STRIPE_PRICE_ID_STARTER",
@@ -54,11 +45,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
   agency: {
     id: "agency",
     name: "Agency",
-    // Truly unlimited, no soft ceiling — only Meta/Telegram's own
-    // per-account rate limits bound throughput. Unlike Starter, this plan
-    // has no circuit breaker of its own against a compromised or abused
-    // workspace running all 10 accounts flat-out.
-    monthlyDmLimit: UNLIMITED,
+    monthlyDmLimit: 250_000,
     maxConnectedAccounts: 10,
     priceUsd: 99,
     stripePriceEnvVar: "STRIPE_PRICE_ID_AGENCY",
@@ -73,6 +60,19 @@ export function isPlanId(value: string): value is PlanId {
 
 export function getPlan(planId: string): PlanDefinition {
   return isPlanId(planId) ? PLANS[planId] : PLANS.free;
+}
+
+const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+export function getEffectivePlanId(planId: string, planStatus: string | null): PlanId {
+  if (planId === "free") return "free";
+  return isPlanId(planId) && ENTITLED_STATUSES.has(planStatus ?? "")
+    ? planId
+    : "free";
+}
+
+export function isMobileCheckoutEnabled() {
+  return process.env.MOBILE_STORE_BILLING_ENABLED === "true";
 }
 
 // Self-hosted default: billing enforcement is entirely opt-in. Without a

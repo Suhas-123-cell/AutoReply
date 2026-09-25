@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db/client";
 import { canManageBilling, getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { getPlan, isBillingConfigured, isPlanId, PAID_PLAN_IDS } from "@/lib/billing/plans";
 import { getStripeClient, getStripePriceId } from "@/lib/billing/stripe";
+import { getBaseUrl } from "@/lib/env";
+import { isMobileCheckoutEnabled } from "@/lib/billing/plans";
 
 const checkoutSchema = z.object({
   plan: z.enum(["starter", "agency"]),
@@ -18,6 +20,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: "Billing is not configured on this deployment." },
       { status: 400 }
+    );
+  }
+  if (
+    request.headers.get("x-autoreply-client") === "mobile" &&
+    !isMobileCheckoutEnabled()
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Mobile purchases are not enabled for this store build.",
+      },
+      { status: 403 }
     );
   }
 
@@ -53,14 +67,26 @@ export async function POST(request: NextRequest) {
   }
 
   const stripe = getStripeClient();
+  if (
+    context.workspace.stripeSubscriptionId &&
+    ["active", "trialing", "past_due", "unpaid", "incomplete"].includes(
+      context.workspace.planStatus ?? ""
+    )
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Manage the existing subscription instead of starting another." },
+      { status: 409 }
+    );
+  }
 
   let session: Stripe.Checkout.Session;
   try {
     let customerId = context.workspace.stripeCustomerId;
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        metadata: { workspaceId: context.workspaceId },
-      });
+      const customer = await stripe.customers.create(
+        { metadata: { workspaceId: context.workspaceId } },
+        { idempotencyKey: `autoreply-customer-${context.workspaceId}` }
+      );
       customerId = customer.id;
       await prisma.workspace.update({
         where: { id: context.workspaceId },
@@ -68,21 +94,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Redirects straight to the app's deep-link scheme, same pattern as the
-    // Instagram OAuth callback (mobileDeepLinkFor in
-    // app/api/instagram/callback/route.ts) — InAppBrowser.openAuth on the
-    // mobile side closes itself once it sees an autoreply:// redirect. The
-    // real plan change lands via the webhook, not this redirect; this URL
-    // is only UX, telling the app to refetch billing status.
-    session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: getStripePriceId(plan.stripePriceEnvVar), quantity: 1 }],
-      success_url: "autoreply://billing?status=success",
-      cancel_url: "autoreply://billing?status=canceled",
-      metadata: { workspaceId: context.workspaceId },
-      subscription_data: { metadata: { workspaceId: context.workspaceId } },
-    });
+    const baseUrl = getBaseUrl().replace(/\/$/, "");
+    const returnBase = `${baseUrl}/billing/return?workspaceId=${encodeURIComponent(context.workspaceId)}`;
+    session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: customerId,
+        line_items: [{ price: getStripePriceId(plan.stripePriceEnvVar), quantity: 1 }],
+        success_url: `${returnBase}&status=success`,
+        cancel_url: `${returnBase}&status=canceled`,
+        metadata: { workspaceId: context.workspaceId },
+        subscription_data: { metadata: { workspaceId: context.workspaceId } },
+      },
+      {
+        // Suppresses accidental double-taps while allowing a fresh attempt
+        // after the ten-minute bucket expires.
+        idempotencyKey: `autoreply-checkout-${context.workspaceId}-${plan.id}-${Math.floor(Date.now() / 600_000)}`,
+      }
+    );
   } catch (err) {
     const message =
       err instanceof Stripe.errors.StripeError

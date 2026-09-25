@@ -1,13 +1,17 @@
 import { prisma } from "@/lib/db/client";
 import type { Prisma } from "@/app/generated/prisma/client";
-import { getPlan, isBillingConfigured, UNLIMITED } from "./plans";
+import { getEffectivePlanId, getPlan, isBillingConfigured, UNLIMITED } from "./plans";
 
-function getWorkspaceLimit(plan: string): number {
-  return isBillingConfigured() ? getPlan(plan).monthlyDmLimit : UNLIMITED;
+function getWorkspaceLimit(plan: string, planStatus: string | null): number {
+  return isBillingConfigured()
+    ? getPlan(getEffectivePlanId(plan, planStatus)).monthlyDmLimit
+    : UNLIMITED;
 }
 
-function getWorkspaceAccountLimit(plan: string): number {
-  return isBillingConfigured() ? getPlan(plan).maxConnectedAccounts : UNLIMITED;
+function getWorkspaceAccountLimit(plan: string, planStatus: string | null): number {
+  return isBillingConfigured()
+    ? getPlan(getEffectivePlanId(plan, planStatus)).maxConnectedAccounts
+    : UNLIMITED;
 }
 
 // Combined Instagram + Telegram count, since both share one pool per plan
@@ -20,14 +24,14 @@ export async function canConnectAnotherAccount(workspaceId: string): Promise<{
 }> {
   const workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
-    select: { plan: true },
+    select: { plan: true, planStatus: true },
   });
 
   if (!workspace) {
     return { allowed: false, connected: 0, limit: 0 };
   }
 
-  const limit = getWorkspaceAccountLimit(workspace.plan);
+  const limit = getWorkspaceAccountLimit(workspace.plan, workspace.planStatus);
   const [instagramCount, telegramCount] = await Promise.all([
     prisma.instagramAccount.count({ where: { workspaceId } }),
     prisma.telegramAccount.count({ where: { workspaceId } }),
@@ -87,6 +91,7 @@ export async function reserveWorkspaceDMSend(
         usagePeriodStart: true,
         dmsSentThisPeriod: true,
         plan: true,
+        planStatus: true,
       },
     });
 
@@ -100,7 +105,7 @@ export async function reserveWorkspaceDMSend(
       };
     }
 
-    const limit = getWorkspaceLimit(workspace.plan);
+    const limit = getWorkspaceLimit(workspace.plan, workspace.planStatus);
 
     if (workspace.dmsSentThisPeriod >= limit) {
       return {
@@ -160,6 +165,7 @@ export async function canSendDMForWorkspace(workspaceId: string): Promise<{
     select: {
       dmsSentThisPeriod: true,
       plan: true,
+      planStatus: true,
     },
   });
 
@@ -167,7 +173,7 @@ export async function canSendDMForWorkspace(workspaceId: string): Promise<{
     return { allowed: false, remaining: 0, limit: 0 };
   }
 
-  const limit = getWorkspaceLimit(workspace.plan);
+  const limit = getWorkspaceLimit(workspace.plan, workspace.planStatus);
   const remaining = Math.max(0, limit - workspace.dmsSentThisPeriod);
 
   return {

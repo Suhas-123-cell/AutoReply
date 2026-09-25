@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import InAppBrowser from "react-native-inappbrowser-reborn";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../src/api/client";
@@ -15,22 +15,20 @@ import { colors } from "../../../src/ui/tokens";
 // renders. This screen only grows once billing is actually turned on.
 async function openInAppBrowser(url) {
   if (await InAppBrowser.isAvailable()) {
-    await InAppBrowser.open(url, { ephemeralWebSession: false });
+    await InAppBrowser.openAuth(url, "autoreply://billing", { ephemeralWebSession: false });
   } else {
-    await InAppBrowser.open(url);
+    await Linking.openURL(url);
   }
 }
 
-function PlanCard({ plan, isCurrent, canManage, onUpgrade, upgrading }) {
+function PlanCard({ plan, isCurrent, canManage, mobileCheckoutEnabled, onUpgrade, upgrading }) {
   return (
     <Card>
       <View className="flex-row items-center justify-between">
         <View>
           <Text className="text-sm font-semibold text-foreground">{plan.name}</Text>
           <Text className="mt-0.5 text-xs text-muted">
-            {plan.priceUsd === 0
-              ? `${plan.monthlyDmLimit.toLocaleString()} DMs / month · `
-              : "Unlimited DMs · "}
+            {plan.monthlyDmLimit.toLocaleString()} DMs / month · {""}
             {plan.maxConnectedAccounts} account{plan.maxConnectedAccounts === 1 ? "" : "s"}
           </Text>
         </View>
@@ -42,7 +40,7 @@ function PlanCard({ plan, isCurrent, canManage, onUpgrade, upgrading }) {
         <View className="mt-3 self-start rounded-full border border-accent px-3 py-1">
           <Text className="text-xs font-medium text-accent">Current plan</Text>
         </View>
-      ) : plan.priceUsd > 0 && canManage ? (
+      ) : plan.priceUsd > 0 && canManage && mobileCheckoutEnabled ? (
         <Pressable
           onPress={() => onUpgrade(plan.id)}
           disabled={upgrading}
@@ -172,10 +170,17 @@ export default function UsageScreen() {
           plan={plan}
           isCurrent={plan.id === billing.plan}
           canManage={canManage}
+          mobileCheckoutEnabled={billing.mobileCheckoutEnabled}
           onUpgrade={(planId) => checkout.mutate(planId)}
           upgrading={pendingPlan === plan.id}
         />
       ))}
+
+      {canManage && !billing.mobileCheckoutEnabled ? (
+        <Text className="text-xs text-muted">
+          Purchases are disabled in this store build until native app-store billing is approved.
+        </Text>
+      ) : null}
 
       {canManage && billing.hasBillingAccount ? (
         <Pressable
