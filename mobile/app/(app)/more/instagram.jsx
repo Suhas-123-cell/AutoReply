@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import InAppBrowser from "react-native-inappbrowser-reborn";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../src/api/client";
@@ -42,7 +42,7 @@ export default function InstagramSettingsScreen() {
           ephemeralWebSession: false,
         });
       } else {
-        await InAppBrowser.open(authorizeUrl);
+        await Linking.openURL(authorizeUrl);
       }
     } catch (err) {
       Alert.alert(

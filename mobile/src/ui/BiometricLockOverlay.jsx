@@ -15,7 +15,7 @@ export default function BiometricLockOverlay({ onUnlock, onSignOut }) {
       <View className="mb-6 h-16 w-16 items-center justify-center rounded-full bg-surface">
         <Ionicons name="lock-closed-outline" size={28} color={colors.accent} />
       </View>
-      <Text className="text-lg font-bold text-foreground">OpenReply is locked</Text>
+      <Text className="text-lg font-bold text-foreground">AutoReply is locked</Text>
       <Text className="mt-2 text-center text-sm text-muted">
         Unlock with Face ID / Touch ID to continue.
       </Text>

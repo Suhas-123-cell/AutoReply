@@ -9,7 +9,7 @@
 import ReactNativeBiometrics, { BiometryTypes } from "react-native-biometrics";
 import * as SecureStore from "./secure-kv";
 
-const LOCK_ENABLED_KEY = "openreply.biometricLockEnabled";
+const LOCK_ENABLED_KEY = "autoreply.biometricLockEnabled";
 const rnBiometrics = new ReactNativeBiometrics();
 
 /** True if the device has enrolled Face ID / Touch ID / fingerprint hardware. */
@@ -19,7 +19,7 @@ export async function isAvailableAsync() {
 }
 
 /** Prompts Face ID / Touch ID / fingerprint. Resolves true only on success. */
-export async function authenticateAsync(promptMessage = "Unlock OpenReply") {
+export async function authenticateAsync(promptMessage = "Unlock AutoReply") {
   // No passcode fallback UI — a failed/cancelled biometric check just leaves
   // the lock screen up, where "Sign out instead" is always visible.
   const { success } = await rnBiometrics.simplePrompt({ promptMessage, cancelButtonText: "Cancel" });

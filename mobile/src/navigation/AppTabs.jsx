@@ -17,27 +17,53 @@ const ICONS = {
 
 const Tab = createBottomTabNavigator();
 
+function screenOptions({ route }) {
+  return {
+    headerShown: false,
+    tabBarActiveTintColor: colors.accent,
+    tabBarInactiveTintColor: colors.muted,
+    tabBarStyle: {
+      backgroundColor: colors.surface,
+      borderTopColor: colors.border,
+    },
+    tabBarIcon: ({ color, size }) => (
+      <Ionicons
+        name={ICONS[route.name] ?? "ellipse-outline"}
+        size={size}
+        color={color}
+      />
+    ),
+  };
+}
+
 export default function AppTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-        },
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons name={ICONS[route.name] ?? "ellipse-outline"} size={size} color={color} />
-        ),
-      })}
-    >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: "Dashboard" }} />
-      <Tab.Screen name="InboxStack" component={InboxStack} options={{ title: "Inbox" }} />
-      <Tab.Screen name="CampaignsStack" component={CampaignsStack} options={{ title: "Campaigns" }} />
-      <Tab.Screen name="Activity" component={ActivityScreen} options={{ title: "Activity" }} />
-      <Tab.Screen name="MoreStack" component={MoreStack} options={{ title: "More" }} />
+    <Tab.Navigator screenOptions={screenOptions}>
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardScreen}
+        options={{ title: "Dashboard" }}
+      />
+      <Tab.Screen
+        name="InboxStack"
+        component={InboxStack}
+        options={{ title: "Inbox" }}
+      />
+      <Tab.Screen
+        name="CampaignsStack"
+        component={CampaignsStack}
+        options={{ title: "Campaigns" }}
+      />
+      <Tab.Screen
+        name="Activity"
+        component={ActivityScreen}
+        options={{ title: "Activity" }}
+      />
+      <Tab.Screen
+        name="MoreStack"
+        component={MoreStack}
+        options={{ title: "More" }}
+      />
     </Tab.Navigator>
   );
 }

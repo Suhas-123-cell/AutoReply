@@ -20,11 +20,11 @@ import * as SecureStore from "../lib/secure-kv";
 import { apiFetch, ApiError } from "../api/client";
 import { navigate } from "../navigation/navigationRef";
 
-const PRIMER_SEEN_KEY = "openreply.pushPrimerSeen";
-const TOKEN_KEY = "openreply.fcmToken";
+const PRIMER_SEEN_KEY = "autoreply.pushPrimerSeen";
+const TOKEN_KEY = "autoreply.fcmToken";
 // Cached locally because PATCH /api/mobile/push/preferences takes the token
 // as its identifier and there is no GET endpoint to read current prefs back.
-const PREFS_KEY = "openreply.pushPreferences";
+const PREFS_KEY = "autoreply.pushPreferences";
 
 // `messaging()` throws synchronously if no native Firebase app has been
 // configured (no GoogleService-Info.plist / google-services.json) — a
