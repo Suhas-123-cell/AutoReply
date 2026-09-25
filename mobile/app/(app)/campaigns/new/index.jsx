@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/auth/AuthContext";
-import { canManageWorkspace } from "../../../../src/lib/workspace-access";
+import { canManageCampaigns } from "../../../../src/lib/workspace-access";
 import { validateStep1 } from "../../../../src/lib/campaign-validation";
 import { useCampaignWizardStore } from "../../../../src/store/campaignWizardStore";
 import EmptyState from "../../../../src/ui/EmptyState";
@@ -21,7 +21,7 @@ const SCOPES = [
 export default function WizardStep1() {
   const navigation = useNavigation();
   const { role } = useAuth();
-  const canManage = canManageWorkspace(role);
+  const canManage = canManageCampaigns(role);
   const draft = useCampaignWizardStore((s) => s.draft);
   const setFields = useCampaignWizardStore((s) => s.setFields);
   const [error, setError] = useState(null);
@@ -29,6 +29,11 @@ export default function WizardStep1() {
   const { data: accountsData } = useQuery({
     queryKey: ["instagram-accounts"],
     queryFn: () => apiFetch("/api/instagram/accounts"),
+  });
+  const { data: templates = [] } = useQuery({
+    queryKey: ["campaign-templates"],
+    queryFn: () => apiFetch("/api/templates"),
+    staleTime: Infinity,
   });
   const accounts = useMemo(
     () => accountsData?.instagramAccounts ?? [],
@@ -61,7 +66,7 @@ export default function WizardStep1() {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
         <Text className="text-center text-sm text-muted">
-          Only workspace owners and admins can create campaigns.
+          Your role does not allow campaign editing.
         </Text>
       </View>
     );
@@ -81,9 +86,56 @@ export default function WizardStep1() {
   return (
     <View className="flex-1 bg-background">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
+        <View className="gap-2">
+          <Text className="text-sm font-semibold text-foreground">
+            Start from a proven setup
+          </Text>
+          <Text className="text-xs text-muted">
+            A template fills the goal, keywords, and DM. You can change every
+            field before launch.
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {templates.map((template) => (
+              <Pressable
+                key={template.slug}
+                onPress={() => {
+                  setFields({
+                    goal: template.goal,
+                    keywords: template.keywords,
+                    matchAnyWord: false,
+                    dmMessage: template.dmMessage,
+                    name: template.title,
+                  });
+                  setError(null);
+                }}
+                className="w-64 rounded-xl border border-border bg-surface p-3"
+              >
+                <Text className="text-[11px] font-medium uppercase tracking-wide text-accent">
+                  {template.category}
+                </Text>
+                <Text className="mt-1 text-sm font-semibold text-foreground">
+                  {template.title}
+                </Text>
+                <Text
+                  className="mt-1 text-xs leading-4 text-muted"
+                  numberOfLines={3}
+                >
+                  {template.summary}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
         {accounts.length > 1 ? (
           <View className="gap-2">
-            <Text className="text-xs font-medium text-muted">Instagram account</Text>
+            <Text className="text-xs font-medium text-muted">
+              Instagram account
+            </Text>
             <View className="flex-row flex-wrap gap-2">
               {accounts.map((account) => {
                 const active = draft.instagramAccountId === account.id;
@@ -100,11 +152,17 @@ export default function WizardStep1() {
                       })
                     }
                     className={`rounded-full border px-3 py-1.5 ${
-                      active ? "border-accent bg-accent" : "border-border bg-surface"
+                      active
+                        ? "border-accent bg-accent"
+                        : "border-border bg-surface"
                     }`}
                   >
                     <Text
-                      className={active ? "text-xs font-medium text-background" : "text-xs text-muted"}
+                      className={
+                        active
+                          ? "text-xs font-medium text-background"
+                          : "text-xs text-muted"
+                      }
                     >
                       @{account.username}
                     </Text>
@@ -116,7 +174,9 @@ export default function WizardStep1() {
         ) : null}
 
         <View className="gap-2">
-          <Text className="text-sm font-semibold text-foreground">When someone comments on, or sends</Text>
+          <Text className="text-sm font-semibold text-foreground">
+            When someone comments on, or sends
+          </Text>
           <View className="gap-2">
             {SCOPES.map((scope) => {
               const checked = draft.triggerScope === scope.value;
@@ -133,9 +193,13 @@ export default function WizardStep1() {
                       checked ? "border-accent" : "border-muted"
                     }`}
                   >
-                    {checked ? <View className="h-2 w-2 rounded-full bg-accent" /> : null}
+                    {checked ? (
+                      <View className="h-2 w-2 rounded-full bg-accent" />
+                    ) : null}
                   </View>
-                  <Text className="flex-1 text-sm text-foreground">{scope.label}</Text>
+                  <Text className="flex-1 text-sm text-foreground">
+                    {scope.label}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -147,7 +211,10 @@ export default function WizardStep1() {
               className="mt-1 flex-row items-center gap-3 rounded-lg border border-border bg-surface p-3"
             >
               {draft.postThumb ? (
-                <Image source={{ uri: draft.postThumb }} className="h-14 w-14 rounded-md" />
+                <Image
+                  source={{ uri: draft.postThumb }}
+                  className="h-14 w-14 rounded-md"
+                />
               ) : (
                 <View className="h-14 w-14 items-center justify-center rounded-md bg-surface-hover">
                   <Text className="text-xs text-muted">None</Text>
@@ -162,7 +229,9 @@ export default function WizardStep1() {
                     {draft.postCaption}
                   </Text>
                 ) : (
-                  <Text className="text-xs text-muted">Tap to browse your posts</Text>
+                  <Text className="text-xs text-muted">
+                    Tap to browse your posts
+                  </Text>
                 )}
               </View>
               <Text className="text-accent">›</Text>
@@ -173,9 +242,12 @@ export default function WizardStep1() {
         {draft.triggerScope !== "dm" ? (
           <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
             <View className="flex-1 pr-3">
-              <Text className="text-sm text-foreground">Also reply to DMs and Story replies</Text>
+              <Text className="text-sm text-foreground">
+                Also reply to DMs and Story replies
+              </Text>
               <Text className="mt-0.5 text-xs text-muted">
-                Same keywords, sent as a DM. Only confirmed followers get the link.
+                Same keywords, sent as a DM. Only confirmed followers get the
+                link.
               </Text>
             </View>
             <Toggle
@@ -185,8 +257,9 @@ export default function WizardStep1() {
           </View>
         ) : (
           <Text className="text-xs text-muted">
-            Fires when someone DMs your account or replies to your Story with a keyword. The link
-            goes only to confirmed followers; everyone else gets a follow prompt first.
+            Fires when someone DMs your account or replies to your Story with a
+            keyword. The link goes only to confirmed followers; everyone else
+            gets a follow prompt first.
           </Text>
         )}
       </ScrollView>

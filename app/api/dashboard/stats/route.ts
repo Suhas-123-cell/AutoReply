@@ -36,18 +36,29 @@ export async function GET(request: NextRequest) {
     requestedInstagramAccountId && requestedInstagramAccountId !== "all"
       ? requestedInstagramAccountId
       : null;
-  // A scoped member's explicit ?instagramAccountId= pick still has to land
-  // inside their allowed set — otherwise fall back to "all allowed accounts"
-  // rather than leaking an out-of-scope account's stats.
+  if (
+    selectedAccountId &&
+    allowedAccountIds &&
+    !allowedAccountIds.has(selectedAccountId)
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Account not found" },
+      { status: 404 }
+    );
+  }
   const inScopeSelectedAccountId =
-    selectedAccountId && (!allowedAccountIds || allowedAccountIds.has(selectedAccountId))
+    selectedAccountId &&
+    (!allowedAccountIds || allowedAccountIds.has(selectedAccountId))
       ? selectedAccountId
       : null;
   const accountFilter = inScopeSelectedAccountId
     ? { instagramAccountId: inScopeSelectedAccountId }
     : allowedAccountIds
-      ? { instagramAccountId: { in: [...allowedAccountIds] } }
-      : {};
+    ? { instagramAccountId: { in: [...allowedAccountIds] } }
+    : {};
+  const deliveredFilter = {
+    OR: [{ messageStage: "DELIVERY" }, { messageStage: null }],
+  };
 
   const [
     workspace,
@@ -111,6 +122,7 @@ export async function GET(request: NextRequest) {
       where: {
         workspaceId,
         status: "SENT",
+        ...deliveredFilter,
         createdAt: { gte: todayStart },
         ...accountFilter,
       },
@@ -119,6 +131,7 @@ export async function GET(request: NextRequest) {
       where: {
         workspaceId,
         status: "SENT",
+        ...deliveredFilter,
         createdAt: { gte: weekStart },
         ...accountFilter,
       },
@@ -127,15 +140,21 @@ export async function GET(request: NextRequest) {
       where: {
         workspaceId,
         status: "SENT",
+        ...deliveredFilter,
         createdAt: { gte: monthStart },
         ...accountFilter,
       },
     }),
     prisma.dmLog.count({
-      where: { workspaceId, status: "SENT", ...accountFilter },
+      where: {
+        workspaceId,
+        status: "SENT",
+        ...deliveredFilter,
+        ...accountFilter,
+      },
     }),
     prisma.dmLog.groupBy({
-      by: ["status"],
+      by: ["status", "messageStage"],
       where: { workspaceId, createdAt: { gte: monthStart }, ...accountFilter },
       _count: { _all: true },
     }),
@@ -182,6 +201,7 @@ export async function GET(request: NextRequest) {
       where: {
         workspaceId,
         status: "SENT",
+        ...deliveredFilter,
         createdAt: { gte: dayStart, lt: dayEnd },
         ...accountFilter,
       },
@@ -196,6 +216,7 @@ export async function GET(request: NextRequest) {
   const monthlyStatusSummary = summarizeDmStatuses(
     dmStatusCountsThisMonth.map((row) => ({
       status: row.status,
+      messageStage: row.messageStage,
       _count: row._count._all,
     }))
   );
@@ -207,9 +228,7 @@ export async function GET(request: NextRequest) {
   );
 
   const firstName =
-    user?.name?.trim().split(/\s+/)[0] ||
-    user?.email?.split("@")[0] ||
-    null;
+    user?.name?.trim().split(/\s+/)[0] || user?.email?.split("@")[0] || null;
 
   return NextResponse.json({
     success: true,

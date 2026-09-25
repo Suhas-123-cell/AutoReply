@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import {
-  canManageWorkspace,
+  canManageCampaigns,
   getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
     "telegramAccountId"
   );
 
+  if (telegramAccountId && allowedAccountIds && !allowedAccountIds.has(telegramAccountId)) {
+    return NextResponse.json({ success: false, error: "Account not found" }, { status: 404 });
+  }
   const automations = await prisma.telegramAutomation.findMany({
     where: {
       workspaceId: context.workspaceId,
@@ -59,9 +62,9 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can create automations" },
+      { success: false, error: "Your role cannot create automations" },
       { status: 403 }
     );
   }
@@ -75,6 +78,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const { telegramAccountIds: allowedAccountIds } = await getAccountAccessScope(context);
+  if (allowedAccountIds && !allowedAccountIds.has(parsed.data.telegramAccountId)) {
+    return NextResponse.json({ success: false, error: "Account not found" }, { status: 404 });
+  }
   const account = await prisma.telegramAccount.findFirst({
     where: {
       id: parsed.data.telegramAccountId,
@@ -120,9 +127,9 @@ export async function PATCH(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can update automations" },
+      { success: false, error: "Your role cannot update automations" },
       { status: 403 }
     );
   }
@@ -144,8 +151,9 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  const { telegramAccountIds: allowedAccountIds } = await getAccountAccessScope(context);
   const existing = await prisma.telegramAutomation.findFirst({
-    where: { id: automationId, workspaceId: context.workspaceId },
+    where: { id: automationId, workspaceId: context.workspaceId, ...(allowedAccountIds ? { telegramAccountId: { in: [...allowedAccountIds] } } : {}) },
   });
   if (!existing) {
     return NextResponse.json(
@@ -170,9 +178,9 @@ export async function DELETE(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can delete automations" },
+      { success: false, error: "Your role cannot delete automations" },
       { status: 403 }
     );
   }
@@ -185,8 +193,9 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
+  const { telegramAccountIds: allowedAccountIds } = await getAccountAccessScope(context);
   const existing = await prisma.telegramAutomation.findFirst({
-    where: { id: automationId, workspaceId: context.workspaceId },
+    where: { id: automationId, workspaceId: context.workspaceId, ...(allowedAccountIds ? { telegramAccountId: { in: [...allowedAccountIds] } } : {}) },
   });
   if (!existing) {
     return NextResponse.json(

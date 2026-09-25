@@ -95,6 +95,18 @@ describe("campaign analytics helpers", () => {
     expect(calculateCtr(5, 20)).toBe(25);
     expect(calculateCtr(2, 3)).toBe(66.7);
     expect(calculateCtr(5, 0)).toBe(0);
+    expect(calculateCtr(3, 2)).toBe(150);
+  });
+
+  it("does not count opening and follow-prompt messages as delivered offers", () => {
+    expect(
+      summarizeDmStatuses([
+        { status: "SENT", messageStage: "OPENING", _count: 5 },
+        { status: "SENT", messageStage: "FOLLOW_PROMPT", _count: 4 },
+        { status: "SENT", messageStage: "DELIVERY", _count: 3 },
+        { status: "SENT", messageStage: null, _count: 2 },
+      ])
+    ).toEqual({ sent: 5, skipped: 0, failed: 0 });
   });
 
   it("normalizes top keywords by count", () => {

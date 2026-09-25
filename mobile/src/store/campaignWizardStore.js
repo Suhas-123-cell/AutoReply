@@ -46,6 +46,7 @@ const initialDraft = {
   secondaryButtonLabel: "Open link",
 
   // Step 5: follow-up + public reply + name/active
+  goal: "",
   followUpEnabled: false,
   followUpMessage: "",
   publicReplyEnabled: false,

@@ -3,7 +3,10 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../../src/api/client";
-import { buildAutomationPayload, validateStep5 } from "../../../../src/lib/campaign-validation";
+import {
+  buildAutomationPayload,
+  validateStep5,
+} from "../../../../src/lib/campaign-validation";
 import { useCampaignWizardStore } from "../../../../src/store/campaignWizardStore";
 import CampaignPreviewSheet from "../../../../src/ui/CampaignPreviewSheet";
 import Toggle from "../../../../src/ui/Toggle";
@@ -19,7 +22,8 @@ export default function WizardStep5() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const create = useMutation({
-    mutationFn: (body) => apiFetch("/api/automations", { method: "POST", body }),
+    mutationFn: (body) =>
+      apiFetch("/api/automations", { method: "POST", body }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       reset();
@@ -30,20 +34,28 @@ export default function WizardStep5() {
       navigation.getParent()?.goBack();
     },
     onError: (err) => {
-      setError(err instanceof ApiError ? err.message : "Could not create campaign");
+      setError(
+        err instanceof ApiError ? err.message : "Could not create campaign"
+      );
     },
   });
 
-  const publicReplyMessages = draft.publicReplyMessages.length ? draft.publicReplyMessages : [""];
+  const publicReplyMessages = draft.publicReplyMessages.length
+    ? draft.publicReplyMessages
+    : [""];
 
   const updateReplyAt = (index, text) => {
     setFields({
-      publicReplyMessages: publicReplyMessages.map((m, i) => (i === index ? text : m)),
+      publicReplyMessages: publicReplyMessages.map((m, i) =>
+        i === index ? text : m
+      ),
     });
   };
 
   const removeReplyAt = (index) => {
-    setFields({ publicReplyMessages: publicReplyMessages.filter((_, i) => i !== index) });
+    setFields({
+      publicReplyMessages: publicReplyMessages.filter((_, i) => i !== index),
+    });
   };
 
   const addReply = () => {
@@ -62,7 +74,9 @@ export default function WizardStep5() {
     <View className="flex-1 bg-background">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
         <View className="flex-row items-center justify-between">
-          <Text className="text-sm font-semibold text-foreground">And then, they will get</Text>
+          <Text className="text-sm font-semibold text-foreground">
+            And then, they will get
+          </Text>
           <Pressable onPress={() => setPreviewOpen(true)}>
             <Text className="text-sm font-medium text-accent">Preview</Text>
           </Pressable>
@@ -70,7 +84,9 @@ export default function WizardStep5() {
 
         <View className="gap-3 rounded-lg border border-border p-3">
           <View className="flex-row items-center justify-between">
-            <Text className="flex-1 pr-3 text-sm text-foreground">A follow-up thank-you message</Text>
+            <Text className="flex-1 pr-3 text-sm text-foreground">
+              A follow-up thank-you message
+            </Text>
             <Toggle
               value={draft.followUpEnabled}
               onValueChange={(value) => setFields({ followUpEnabled: value })}
@@ -98,7 +114,9 @@ export default function WizardStep5() {
             </Text>
             <Toggle
               value={draft.publicReplyEnabled}
-              onValueChange={(value) => setFields({ publicReplyEnabled: value })}
+              onValueChange={(value) =>
+                setFields({ publicReplyEnabled: value })
+              }
             />
           </View>
           {draft.publicReplyEnabled ? (
@@ -122,14 +140,31 @@ export default function WizardStep5() {
               ))}
               {publicReplyMessages.length < 10 ? (
                 <Pressable onPress={addReply}>
-                  <Text className="text-xs font-medium text-accent">+ Add another reply</Text>
+                  <Text className="text-xs font-medium text-accent">
+                    + Add another reply
+                  </Text>
                 </Pressable>
               ) : null}
               <Text className="text-xs text-muted">
-                One is picked at random each time, so replies don&apos;t look identical.
+                One is picked at random each time, so replies don&apos;t look
+                identical.
               </Text>
             </View>
           ) : null}
+        </View>
+
+        <View className="gap-1.5">
+          <Text className="text-xs font-medium text-muted">
+            Business goal (optional)
+          </Text>
+          <TextInput
+            value={draft.goal}
+            onChangeText={(text) => setFields({ goal: text })}
+            placeholder="Example: Book qualified consultations"
+            placeholderTextColor="#9b9ba3"
+            maxLength={120}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
+          />
         </View>
 
         <View className="gap-1.5">

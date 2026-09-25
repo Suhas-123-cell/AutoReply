@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
+import { generateTrackedLinkSlug } from "@/lib/tracking/server";
 import {
-  canManageWorkspace,
+  canManageCampaigns,
+  getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
 
@@ -14,12 +16,9 @@ const cloneSchema = z.object({
   targetInstagramAccountIds: z.array(z.string().min(1)).min(1).max(50),
 });
 
-// One-click flow cloning: build a campaign once, deploy it to every client
-// account in one call. Requires the source campaign's postId to also exist
-// on the target account (comment-to-DM automations are scoped to a specific
-// post) — callers are expected to have already resolved that on the client
-// side; rows that fail the per-account postId uniqueness check are skipped
-// and reported back, not silently dropped.
+// Cross-account clones are always paused. Instagram media ids belong to one
+// account, so a specific-post source becomes a "next post or reel" draft on
+// each target instead of silently storing an invalid foreign media id.
 export async function POST(request: NextRequest) {
   const context = await getCurrentWorkspaceContext();
   if (!context) {
@@ -28,9 +27,9 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can clone automations" },
+      { success: false, error: "Your role cannot clone campaigns" },
       { status: 403 }
     );
   }
@@ -44,10 +43,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
   const source = await prisma.automation.findFirst({
     where: {
       id: parsed.data.sourceAutomationId,
       workspaceId: context.workspaceId,
+      ...(allowedAccountIds
+        ? { instagramAccountId: { in: [...allowedAccountIds] } }
+        : {}),
+    },
+    include: {
+      trackedLinks: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!source) {
@@ -57,10 +64,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const targetIds = [...new Set(parsed.data.targetInstagramAccountIds)];
   const targets = await prisma.instagramAccount.findMany({
     where: {
       workspaceId: context.workspaceId,
-      id: { in: parsed.data.targetInstagramAccountIds },
+      id: {
+        in: allowedAccountIds
+          ? targetIds.filter((id) => allowedAccountIds.has(id))
+          : targetIds,
+      },
     },
   });
   const foundIds = new Set(targets.map((t) => t.id));
@@ -68,7 +80,7 @@ export async function POST(request: NextRequest) {
   const created: { instagramAccountId: string; automationId: string }[] = [];
   const skipped: { instagramAccountId: string; reason: string }[] = [];
 
-  for (const targetId of parsed.data.targetInstagramAccountIds) {
+  for (const targetId of targetIds) {
     if (!foundIds.has(targetId)) {
       skipped.push({ instagramAccountId: targetId, reason: "not found in this workspace" });
       continue;
@@ -78,29 +90,21 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const conflict = await prisma.automation.findFirst({
-      where: { instagramAccountId: targetId, postId: source.postId },
-      select: { id: true },
-    });
-    if (conflict) {
-      skipped.push({
-        instagramAccountId: targetId,
-        reason: "a campaign already exists for this post on that account",
-      });
-      continue;
-    }
-
     const clone = await prisma.automation.create({
       data: {
         workspaceId: context.workspaceId,
         instagramAccountId: targetId,
         name: source.name,
         goal: source.goal,
-        postId: source.postId,
-        postUrl: source.postUrl,
+        postId: null,
+        postUrl: null,
+        pendingNextReel:
+          !source.matchAnyPost &&
+          (source.pendingNextReel || Boolean(source.postId)),
         matchAnyPost: source.matchAnyPost,
         keywords: source.keywords,
         matchAnyWord: source.matchAnyWord,
+        dmTriggerEnabled: source.dmTriggerEnabled,
         dmMessage: source.dmMessage,
         openingDmEnabled: source.openingDmEnabled,
         openingDmMessage: source.openingDmMessage,
@@ -115,12 +119,32 @@ export async function POST(request: NextRequest) {
         publicReplyMessage: source.publicReplyMessage,
         publicReplyMessages: source.publicReplyMessages,
         wholeWordMatch: source.wholeWordMatch,
-        isActive: source.isActive,
+        isActive: false,
+        ...(source.trackedLinks.length > 0
+          ? {
+              trackedLinks: {
+                create: source.trackedLinks.map((link) => ({
+                  workspaceId: context.workspaceId,
+                  slug: generateTrackedLinkSlug(),
+                  label: link.label,
+                  destinationUrl: link.destinationUrl,
+                })),
+              },
+            }
+          : {}),
       },
     });
 
     created.push({ instagramAccountId: targetId, automationId: clone.id });
   }
 
-  return NextResponse.json({ success: true, data: { created, skipped } });
+  return NextResponse.json({
+    success: true,
+    data: {
+      created,
+      skipped,
+      paused: true,
+      note: "Clones are paused. Review the target post and links before activating.",
+    },
+  });
 }
