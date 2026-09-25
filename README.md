@@ -2,7 +2,7 @@
 
 # AutoReply
 
-Open-source Instagram + Telegram comment-to-DM automation, for the mobile app only — no web dashboard.
+Open-source Instagram + Telegram comment-to-DM automation with a native mobile operator app.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Built with Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org)
@@ -12,7 +12,7 @@ Open-source Instagram + Telegram comment-to-DM automation, for the mobile app on
 
 Someone comments `LINK` on your reel, and they get a DM with your link a second later. AutoReply watches the comments on your Instagram posts (and, separately, messages sent to your Telegram bot), and when a comment or message matches a keyword you set, it sends a private reply through the official Meta API or the Telegram Bot API. You can also post a public reply under the Instagram comment at the same time.
 
-There is no web dashboard. Everything — sign-in, campaigns, inbox, activity, team management — happens in the iOS/Android app in `mobile/`. The Next.js app in the repo root is an API-only backend the mobile app talks to; it has no pages of its own.
+Campaign operations happen in the iOS/Android app in `mobile/`. The Next.js service provides the API, public product page, tracked redirects, billing return bridge, and required legal pages.
 
 ## Why this exists
 
@@ -24,22 +24,23 @@ AutoReply is built around Meta's official Instagram private replies and Telegram
 
 - Keyword to DM, on Instagram or Telegram. Match one or many keywords, whole-word or partial, with typo and plural tolerance.
 - DM and Story-reply triggers. The same keywords also fire when someone DMs your account or replies to your Story (Instagram delivers Story replies as DMs), so "Reply LINK to this Story" works with no post involved. Turn it on per campaign, alone or alongside a post trigger. Subscribe to the `messages` webhook field in your Meta app.
-- Followers-only links on the DM path. A DM or Story-reply trigger only ever hands the link to a confirmed follower. Everyone else, including anyone whose follow status Instagram can't resolve, gets a follow prompt with a button that re-checks on tap. This is always on for DM triggers, independent of the per-campaign follow gate below.
+- Optional follower check. When enabled, comments, DMs, and Story replies with unknown or negative follow status get a follow prompt; when disabled, the campaign delivers directly.
 - Optional public reply on Instagram. Post a visible comment reply on top of the DM.
 - Telegram bots, zero gate. Connect a `@BotFather` token and you're live in about two minutes — no Meta App Review wait.
 - Tracked links. Swap a link for a tracked redirect and see clicks and CTR per campaign.
 - Two link buttons. Send up to two tappable link buttons in one DM, each a separate tracked link with its own click stats.
-- Follow gate (Instagram comments). Optionally require a follow before you hand over the link, checked against Meta's `is_user_follow_business` flag. On the comment path it fails open (sends the link anyway) if Instagram doesn't return follow status, so a real follower is never trapped.
+- Follow gate. Optionally require a confirmed follow before handing over the link, checked against Meta's `is_user_follow_business` flag. Unknown status remains gated and can be rechecked from the prompt button.
 - Personalization. Use `{username}` in your message to greet the commenter by name.
 - Per-account rate limiting. Stays under Meta's documented cap of 750 private replies per hour, queuing the overflow instead of dropping it.
 - Multiple accounts, Instagram and Telegram both. Connect several under one workspace, each with its own limits.
-- Workspaces, roles, and per-account permissions. Owner, admin, and member roles with invite links; an owner or admin can additionally scope a MEMBER to only the specific client accounts they're supposed to see — useful if you run this for an agency's multiple clients.
+- Workspaces, roles, and per-account permissions. Owner, admin, editor, and viewer roles with explicit invite acceptance; managers can scope editors and viewers to specific client accounts.
 - Campaign cloning. Reuse one client's automation setup on another without rebuilding it by hand.
-- Campaign templates. Start from a preset instead of a blank form.
+- Campaign templates. Start with a goal, keywords, and DM copy for common creator, local-service, and agency workflows.
+- Outcome tracking. Record qualified leads, bookings, and sales manually alongside delivered messages and link opens.
 - Inbox. Read your Instagram DM conversations and reply from the app, inside Meta's 24-hour messaging window.
 - Activity log. Every send, skip, and failure is logged with a reason and filterable status.
 - Self-comment filtering. Your own comments never trigger a reply.
-- Optional billing. Self-hosted by default with no usage caps at all — set a few `STRIPE_*` env vars if you want to run this as a paid hosted product with Free/Starter/Agency plan tiers instead. See `lib/billing/plans.ts`.
+- Optional billing. Self-hosted deployments have no plan cap. Hosted deployments can enable Free (500 messages, one account), Starter (25,000 messages, two accounts), and Agency (250,000 messages, ten accounts). Store builds keep external checkout disabled until their native billing path or applicable program is approved.
 
 ## How it works
 
@@ -49,7 +50,7 @@ AutoReply is built around Meta's official Instagram private replies and Telegram
 4. On a keyword match, it queues a job.
 5. A background worker sends the private reply (and the public reply on Instagram, if enabled).
 
-The Next.js app receives the webhook and serves the API the mobile app calls — it has no dashboard and no login page. The only browser-visible routes are `/privacy`, `/terms`, and `/data-deletion`, which Meta App Review and the app stores require; set `LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` so they show your details. A separate worker process does the sending, because it has to survive rate limits and retries. Both talk to the same Postgres and Redis.
+The Next.js app receives webhooks, serves the mobile API and public product/legal pages, and records tracked-link opens. Set `LEGAL_OPERATOR_NAME` and `LEGAL_CONTACT_EMAIL` before deployment. A separate worker process sends replies so retries and rate limits survive web restarts. Both use the same Postgres and Redis services.
 
 ## Quick start
 
@@ -64,7 +65,7 @@ npm install
 cp .env.example .env      # then fill in the values — see the comments in that file
 docker-compose up -d      # starts Postgres and Redis
 npm run db:migrate
-npm run dev               # API on http://localhost:3000 (no pages to visit)
+npm run dev               # API and product page on http://localhost:3000
 npm run worker            # in a second terminal, this sends the DMs
 ```
 
@@ -83,7 +84,7 @@ See [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example) 
 
 ## Tech stack
 
-- Next.js 16 and React 19 for the API-only backend
+- Next.js 16 and React 19 for the backend and public product/legal pages
 - React Native 0.81 (bare workflow, no Expo) for iOS + Android
 - Prisma 7 with PostgreSQL
 - BullMQ on Redis for the send queue and the worker
@@ -91,14 +92,13 @@ See [.env.example](.env.example) and [mobile/.env.example](mobile/.env.example) 
 - The official Instagram API (Instagram Login) and the Telegram Bot API
 - Stripe (optional) for the hosted-billing tier
 
-
 ## Contributing
 
 Issues and pull requests are welcome. If you hit a Meta or Telegram quirk that isn't in the setup guide, a PR that documents it is worth as much as a code fix. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ## Credits
 
-AutoReply (originally OpenReply) is a fork of [instagram-comment-to-dm](https://github.com/im-anishraj/instagram-comment-to-dm) by [Anish Raj](https://github.com/im-anishraj), MIT licensed. This fork rebuilt it around a mobile app instead of a web dashboard, added Telegram support, per-account permissions, and campaign cloning for agencies, and made billing an optional opt-in layer rather than removing it outright.
+AutoReply is a fork of [instagram-comment-to-dm](https://github.com/im-anishraj/instagram-comment-to-dm) by [Anish Raj](https://github.com/im-anishraj), MIT licensed. This fork rebuilt it around a mobile app instead of a web dashboard, added Telegram support, per-account permissions, and campaign cloning for agencies, and made billing an optional opt-in layer rather than removing it outright.
 
 ## License
 
