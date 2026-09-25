@@ -26,12 +26,37 @@ async function applySubscription(subscription: Stripe.Subscription) {
   const priceId = subscription.items.data[0]?.price.id;
   const planId = priceId ? priceIdToPlanId(priceId) : null;
   const item = subscription.items.data[0];
+  if (!planId) {
+    console.warn("[Stripe Webhook] Subscription uses an unknown price:", subscription.id);
+    return;
+  }
+
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { stripeCustomerId: true, stripeSubscriptionId: true },
+  });
+  if (!workspace) return;
+  const customerId =
+    typeof subscription.customer === "string"
+      ? subscription.customer
+      : subscription.customer.id;
+  if (workspace.stripeCustomerId && workspace.stripeCustomerId !== customerId) {
+    console.warn("[Stripe Webhook] Customer/workspace mismatch:", subscription.id);
+    return;
+  }
+  if (
+    workspace.stripeSubscriptionId &&
+    workspace.stripeSubscriptionId !== subscription.id
+  ) {
+    console.warn("[Stripe Webhook] Ignoring stale subscription event:", subscription.id);
+    return;
+  }
 
   await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       stripeSubscriptionId: subscription.id,
-      plan: planId ?? "free",
+      plan: planId,
       planStatus: subscription.status,
       currentPeriodEnd: item?.current_period_end
         ? new Date(item.current_period_end * 1000)
@@ -44,8 +69,8 @@ async function clearSubscription(subscription: Stripe.Subscription) {
   const workspaceId = subscription.metadata.workspaceId;
   if (!workspaceId) return;
 
-  await prisma.workspace.update({
-    where: { id: workspaceId },
+  await prisma.workspace.updateMany({
+    where: { id: workspaceId, stripeSubscriptionId: subscription.id },
     data: {
       plan: "free",
       planStatus: "canceled",

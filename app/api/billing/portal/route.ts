@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { canManageBilling, getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { isBillingConfigured } from "@/lib/billing/plans";
 import { getStripeClient } from "@/lib/billing/stripe";
+import { getBaseUrl } from "@/lib/env";
 
 // Stripe's hosted Billing Portal — lets the workspace owner change plan,
 // update card details, or cancel, all inside Stripe's own UI rather than us
@@ -41,7 +42,7 @@ export async function POST() {
   try {
     const session = await stripe.billingPortal.sessions.create({
       customer: context.workspace.stripeCustomerId,
-      return_url: "autoreply://billing",
+      return_url: `${getBaseUrl().replace(/\/$/, "")}/billing/return?status=portal`,
     });
     return NextResponse.json({ success: true, data: { url: session.url } });
   } catch (err) {

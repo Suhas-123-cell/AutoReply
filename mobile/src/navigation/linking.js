@@ -1,7 +1,7 @@
 /**
  * Hand-written deep-link config, replacing expo-router's implicit file-tree
  * linking. The `autoreply://` scheme itself is already registered natively
- * in ios/OpenReply/Info.plist and android/app/src/main/AndroidManifest.xml —
+ * in ios/AutoReply/Info.plist and android/app/src/main/AndroidManifest.xml —
  * this is only the JS-side path -> screen mapping.
  *
  * Today the only real inbound deep link is the Instagram OAuth callback,
@@ -16,6 +16,7 @@ export const linking = {
   config: {
     screens: {
       IgConnect: "ig-connect",
+      BillingReturn: "billing",
       InviteAccept: "invite/:token",
       AppTabs: {
         screens: {

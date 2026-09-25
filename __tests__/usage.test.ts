@@ -122,7 +122,7 @@ describe("reserveWorkspaceDMSend with billing configured", () => {
   it("enforces the workspace's plan limit instead of the unlimited default", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_stub");
     const periodStart = new Date("2026-05-01T00:00:00.000Z");
-    const STARTER_LIMIT = 500_000;
+    const STARTER_LIMIT = 25_000;
 
     // Already at the starter plan's cap — must be denied even though it's
     // nowhere near the self-hosted UNLIMITED constant.
@@ -131,6 +131,7 @@ describe("reserveWorkspaceDMSend with billing configured", () => {
       usagePeriodStart: periodStart,
       dmsSentThisPeriod: STARTER_LIMIT,
       plan: "starter",
+      planStatus: "active",
     });
 
     const result = await reserveWorkspaceDMSend("workspace_123");
@@ -142,13 +143,14 @@ describe("reserveWorkspaceDMSend with billing configured", () => {
   it("falls back to the free plan's limit for an unrecognized plan value", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_stub");
     const periodStart = new Date("2026-05-01T00:00:00.000Z");
-    const FREE_LIMIT = 5_000;
+    const FREE_LIMIT = 500;
 
     mockTx.workspace.updateMany.mockResolvedValueOnce({ count: 0 });
     mockTx.workspace.findUnique.mockResolvedValueOnce({
       usagePeriodStart: periodStart,
       dmsSentThisPeriod: FREE_LIMIT,
       plan: "not-a-real-plan",
+      planStatus: "active",
     });
 
     const result = await reserveWorkspaceDMSend("workspace_123");
