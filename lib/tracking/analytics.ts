@@ -2,6 +2,7 @@ const SKIPPED_PREFIX = "SKIPPED_";
 
 export interface StatusCountRow {
   status: string;
+  messageStage?: string | null;
   _count: number | { status?: number; _all?: number };
 }
 
@@ -23,16 +24,23 @@ function getCount(value: StatusCountRow["_count"] | KeywordCountRow["_count"]) {
 
 export function calculateCtr(clicks: number, sent: number) {
   if (sent <= 0) return 0;
-  // Raw clicks can exceed sends (repeat clicks, link-preview bots hitting the
-  // tracked URL), which makes a "rate" over 100% — cap it so CTR stays sane.
-  return Math.min(100, Number(((clicks / sent) * 100).toFixed(1)));
+  // This is clicks per delivered offer DM, not a unique-person conversion
+  // rate. Repeat opens can legitimately make it greater than 100%.
+  return Number(((clicks / sent) * 100).toFixed(1));
 }
 
 export function summarizeDmStatuses(rows: StatusCountRow[]) {
   return rows.reduce(
     (summary, row) => {
       const count = getCount(row._count);
-      if (row.status === "SENT") summary.sent += count;
+      if (
+        row.status === "SENT" &&
+        (row.messageStage === undefined ||
+          row.messageStage === null ||
+          row.messageStage === "DELIVERY")
+      ) {
+        summary.sent += count;
+      }
       if (row.status === "FAILED") summary.failed += count;
       if (row.status.startsWith(SKIPPED_PREFIX)) summary.skipped += count;
       return summary;

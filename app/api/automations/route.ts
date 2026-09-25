@@ -7,7 +7,7 @@ import { buildTrackedUrl } from "@/lib/tracking/message";
 import { generateTrackedLinkSlug } from "@/lib/tracking/server";
 import { httpUrlSchema } from "@/lib/utils/url";
 import {
-  canManageWorkspace,
+  canManageCampaigns,
   getAccountAccessScope,
   getCurrentWorkspaceContext,
 } from "@/lib/workspace-access";
@@ -83,8 +83,15 @@ const createAutomationSchema = z
       !d.openingDmEnabled ||
       (Boolean(d.openingDmMessage?.trim()) &&
         Boolean(d.openingDmButtonLabel?.trim())),
-    { message: "Opening DM needs a message and a button label", path: ["openingDmMessage"] }
-  );
+    {
+      message: "Opening DM needs a message and a button label",
+      path: ["openingDmMessage"],
+    }
+  )
+  .refine((d) => !d.requireFollow || Boolean(d.followPromptMessage?.trim()), {
+    message: "A follow requirement needs a follow-prompt message",
+    path: ["followPromptMessage"],
+  });
 
 const updateAutomationSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -139,12 +146,23 @@ export async function GET(request: NextRequest) {
 
   const instagramAccountId =
     request.nextUrl.searchParams.get("instagramAccountId");
+  if (
+    instagramAccountId &&
+    instagramAccountId !== "all" &&
+    allowedAccountIds &&
+    !allowedAccountIds.has(instagramAccountId)
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Account not found" },
+      { status: 404 }
+    );
+  }
   const accountFilter =
     instagramAccountId && instagramAccountId !== "all"
       ? { instagramAccountId }
       : allowedAccountIds
-        ? { instagramAccountId: { in: [...allowedAccountIds] } }
-        : {};
+      ? { instagramAccountId: { in: [...allowedAccountIds] } }
+      : {};
 
   const automations = await prisma.automation.findMany({
     where: { workspaceId, ...accountFilter },
@@ -171,7 +189,7 @@ export async function GET(request: NextRequest) {
 
   const [statusCounts, clickCounts, keywordCounts] = await Promise.all([
     prisma.dmLog.groupBy({
-      by: ["automationId", "status"],
+      by: ["automationId", "status", "messageStage"],
       where: { workspaceId },
       _count: { _all: true },
     }),
@@ -212,7 +230,12 @@ export async function GET(request: NextRequest) {
     const item = analytics.get(row.automationId);
     if (!item) continue;
     const count = row._count._all;
-    if (row.status === "SENT") item.sent += count;
+    if (
+      row.status === "SENT" &&
+      (row.messageStage === null || row.messageStage === "DELIVERY")
+    ) {
+      item.sent += count;
+    }
     if (row.status === "FAILED") item.failed += count;
     if (row.status.startsWith("SKIPPED_")) item.skipped += count;
   }
@@ -238,28 +261,28 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(
     {
-    success: true,
-    data: automations.map((automation) => {
-      const item = analytics.get(automation.id) ?? {
-        sent: 0,
-        skipped: 0,
-        failed: 0,
-        clicks: 0,
-        topKeywords: [],
-      };
+      success: true,
+      data: automations.map((automation) => {
+        const item = analytics.get(automation.id) ?? {
+          sent: 0,
+          skipped: 0,
+          failed: 0,
+          clicks: 0,
+          topKeywords: [],
+        };
 
-      return {
-        ...automation,
-        trackedLinks: automation.trackedLinks.map((link) => ({
-          ...link,
-          trackedUrl: buildTrackedUrl(link.slug),
-        })),
-        analytics: {
-          ...item,
-          ctr: calculateCtr(item.clicks, item.sent),
-        },
-      };
-    }),
+        return {
+          ...automation,
+          trackedLinks: automation.trackedLinks.map((link) => ({
+            ...link,
+            trackedUrl: buildTrackedUrl(link.slug),
+          })),
+          analytics: {
+            ...item,
+            ctr: calculateCtr(item.clicks, item.sent),
+          },
+        };
+      }),
     },
     { headers: { "Cache-Control": "no-store" } }
   );
@@ -274,14 +297,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can create campaigns" },
+      { success: false, error: "Your role cannot create campaigns" },
       { status: 403 }
     );
   }
 
   const workspaceId = context.workspaceId;
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
 
   const body = await request.json();
   const parsed = createAutomationSchema.safeParse(body);
@@ -302,6 +327,16 @@ export async function POST(request: NextRequest) {
       ? parsed.data.instagramAccountId
       : null;
 
+  if (
+    requestedInstagramAccountId &&
+    allowedAccountIds &&
+    !allowedAccountIds.has(requestedInstagramAccountId)
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Account not found" },
+      { status: 404 }
+    );
+  }
   const [workspace, instagramAccount] = await Promise.all([
     prisma.workspace.findUnique({
       where: { id: workspaceId },
@@ -312,7 +347,12 @@ export async function POST(request: NextRequest) {
           where: { id: requestedInstagramAccountId, workspaceId },
         })
       : prisma.instagramAccount.findFirst({
-          where: { workspaceId },
+          where: {
+            workspaceId,
+            ...(allowedAccountIds
+              ? { id: { in: [...allowedAccountIds] } }
+              : {}),
+          },
           orderBy: { connectedAt: "desc" },
         }),
   ]);
@@ -331,8 +371,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { trackedDestinationUrl, secondaryDestinationUrl, secondaryButtonLabel } =
-    parsed.data;
+  const {
+    trackedDestinationUrl,
+    secondaryDestinationUrl,
+    secondaryButtonLabel,
+  } = parsed.data;
 
   // The primary link's button title comes from `linkButtonLabel`; the second
   // link stores its own button title in the tracked link's `label` field.
@@ -367,8 +410,8 @@ export async function POST(request: NextRequest) {
     parsed.data.publicReplyMessages.length > 0
       ? parsed.data.publicReplyMessages
       : parsed.data.publicReplyMessage
-        ? [parsed.data.publicReplyMessage]
-        : []
+      ? [parsed.data.publicReplyMessage]
+      : []
   )
     .map((m) => m.trim())
     .filter(Boolean);
@@ -440,9 +483,9 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can update campaigns" },
+      { success: false, error: "Your role cannot update campaigns" },
       { status: 403 }
     );
   }
@@ -471,8 +514,16 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
   const existing = await prisma.automation.findFirst({
-    where: { id: automationId, workspaceId },
+    where: {
+      id: automationId,
+      workspaceId,
+      ...(allowedAccountIds
+        ? { instagramAccountId: { in: [...allowedAccountIds] } }
+        : {}),
+    },
   });
 
   if (!existing) {
@@ -504,7 +555,10 @@ export async function PATCH(request: NextRequest) {
     automationData.followUpMessage = null;
   }
   // Any-post / next-reel campaigns carry no specific post.
-  if (automationData.matchAnyPost === true || automationData.pendingNextReel === true) {
+  if (
+    automationData.matchAnyPost === true ||
+    automationData.pendingNextReel === true
+  ) {
     automationData.postId = null;
     automationData.postUrl = null;
   }
@@ -525,6 +579,33 @@ export async function PATCH(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (!merged.matchAnyWord && merged.keywords.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "Add at least one keyword, or match any word" },
+      { status: 400 }
+    );
+  }
+  if (
+    merged.openingDmEnabled &&
+    (!merged.openingDmMessage?.trim() || !merged.openingDmButtonLabel?.trim())
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Opening DM needs a message and a button label",
+      },
+      { status: 400 }
+    );
+  }
+  if (merged.requireFollow && !merged.followPromptMessage?.trim()) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "A follow requirement needs a follow-prompt message",
+      },
+      { status: 400 }
+    );
+  }
   // Keep the public-reply variations list and the legacy single field in sync.
   if (automationData.publicReplyMessages !== undefined) {
     const list = automationData.publicReplyMessages
@@ -538,6 +619,13 @@ export async function PATCH(request: NextRequest) {
     automationData.publicReplyMessage = null;
   }
 
+  const originalLinks = await prisma.trackedLink.findMany({
+    where: { automationId },
+    orderBy: { createdAt: "asc" },
+    take: 2,
+  });
+  const [originalPrimaryLink, originalSecondaryLink] = originalLinks;
+
   const updated = await prisma.automation.update({
     where: { id: automationId },
     data: automationData,
@@ -546,18 +634,15 @@ export async function PATCH(request: NextRequest) {
   // Update, create, or clear the campaign's primary tracked link when a
   // destination URL was supplied. `undefined` means "leave it alone".
   if (trackedDestinationUrl !== undefined && trackedDestinationUrl !== null) {
-    const primaryLink = await prisma.trackedLink.findFirst({
-      where: { automationId },
-      orderBy: { createdAt: "asc" },
-    });
-
     if (trackedDestinationUrl === "") {
-      if (primaryLink) {
-        await prisma.trackedLink.delete({ where: { id: primaryLink.id } });
+      if (originalPrimaryLink) {
+        await prisma.trackedLink.delete({
+          where: { id: originalPrimaryLink.id },
+        });
       }
-    } else if (primaryLink) {
+    } else if (originalPrimaryLink) {
       await prisma.trackedLink.update({
-        where: { id: primaryLink.id },
+        where: { id: originalPrimaryLink.id },
         data: { destinationUrl: trackedDestinationUrl },
       });
     } else {
@@ -576,22 +661,25 @@ export async function PATCH(request: NextRequest) {
   // Update, create, or clear the campaign's second tracked link. It is always
   // the link at index [1] (ordered by createdAt), and its `label` holds the
   // second button's title.
-  if (secondaryDestinationUrl !== undefined && secondaryDestinationUrl !== null) {
-    const links = await prisma.trackedLink.findMany({
-      where: { automationId },
-      orderBy: { createdAt: "asc" },
-    });
-    const secondaryLink = links[1];
+  if (
+    secondaryDestinationUrl !== undefined &&
+    secondaryDestinationUrl !== null
+  ) {
     const secondaryLabel = secondaryButtonLabel?.trim() || "Open link";
 
     if (secondaryDestinationUrl === "") {
-      if (secondaryLink) {
-        await prisma.trackedLink.delete({ where: { id: secondaryLink.id } });
+      if (originalSecondaryLink) {
+        await prisma.trackedLink.delete({
+          where: { id: originalSecondaryLink.id },
+        });
       }
-    } else if (secondaryLink) {
+    } else if (originalSecondaryLink) {
       await prisma.trackedLink.update({
-        where: { id: secondaryLink.id },
-        data: { destinationUrl: secondaryDestinationUrl, label: secondaryLabel },
+        where: { id: originalSecondaryLink.id },
+        data: {
+          destinationUrl: secondaryDestinationUrl,
+          label: secondaryLabel,
+        },
       });
     } else {
       await prisma.trackedLink.create({
@@ -618,9 +706,9 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  if (!canManageWorkspace(context.role)) {
+  if (!canManageCampaigns(context.role)) {
     return NextResponse.json(
-      { success: false, error: "Only owners and admins can delete campaigns" },
+      { success: false, error: "Your role cannot delete campaigns" },
       { status: 403 }
     );
   }
@@ -635,8 +723,16 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
+  const { instagramAccountIds: allowedAccountIds } =
+    await getAccountAccessScope(context);
   const existing = await prisma.automation.findFirst({
-    where: { id: automationId, workspaceId },
+    where: {
+      id: automationId,
+      workspaceId,
+      ...(allowedAccountIds
+        ? { instagramAccountId: { in: [...allowedAccountIds] } }
+        : {}),
+    },
   });
 
   if (!existing) {

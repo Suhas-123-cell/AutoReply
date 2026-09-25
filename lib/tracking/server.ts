@@ -49,3 +49,10 @@ export function getRequestIp(request: Request) {
     null
   );
 }
+
+export function isLikelyLinkPreview(userAgent: string | null) {
+  if (!userAgent) return false;
+  return /(facebookexternalhit|facebot|meta-externalagent|whatsapp|telegrambot|twitterbot|linkedinbot|slackbot|discordbot|pinterestbot|googlebot|bingbot|applebot)/i.test(
+    userAgent
+  );
+}

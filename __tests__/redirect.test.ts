@@ -97,6 +97,45 @@ describe("tracked link redirect route", () => {
     expect(mockPrisma.linkClick.create).not.toHaveBeenCalled();
   });
 
+  it("does not count link-preview bots as customer clicks", async () => {
+    mockPrisma.trackedLink.findUnique.mockResolvedValue({
+      id: "link_123",
+      workspaceId: "workspace_123",
+      automationId: "automation_123",
+      destinationUrl: "https://example.com/offer",
+      automation: { instagramAccountId: "instagram_account_123" },
+    });
+
+    const response = await GET(
+      new Request("https://manychat-alternative.com/r/abc123", {
+        headers: { "user-agent": "facebookexternalhit/1.1" },
+      }) as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ slug: "abc123" }) }
+    );
+
+    expect(response.status).toBe(302);
+    expect(mockPrisma.linkClick.create).not.toHaveBeenCalled();
+  });
+
+  it("still redirects when click logging fails", async () => {
+    mockPrisma.trackedLink.findUnique.mockResolvedValue({
+      id: "link_123",
+      workspaceId: "workspace_123",
+      automationId: "automation_123",
+      destinationUrl: "https://example.com/offer",
+      automation: { instagramAccountId: "instagram_account_123" },
+    });
+    mockPrisma.linkClick.create.mockRejectedValue(new Error("database unavailable"));
+
+    const response = await GET(
+      new Request("https://manychat-alternative.com/r/abc123") as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ slug: "abc123" }) }
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://example.com/offer");
+  });
+
   it("redirects unknown slugs to the homepage without logging a click", async () => {
     mockPrisma.trackedLink.findUnique.mockResolvedValue(null);
 

@@ -7,8 +7,7 @@
 
 function isValidUrl(value) {
   try {
-    new URL(value);
-    return true;
+    return Boolean(new URL(value));
   } catch {
     return false;
   }
@@ -47,7 +46,10 @@ export function validateStep3(draft) {
 
 export function validateStep4(draft) {
   if (!draft.dmMessage.trim()) return "Add the DM message.";
-  if (draft.trackedDestinationUrl.trim() && !isValidUrl(draft.trackedDestinationUrl.trim())) {
+  if (
+    draft.trackedDestinationUrl.trim() &&
+    !isValidUrl(draft.trackedDestinationUrl.trim())
+  ) {
     return "The tracked link must be a valid URL.";
   }
   if (
@@ -91,6 +93,7 @@ export function buildTriggerFields(draft) {
 export function buildAutomationPayload(draft) {
   return {
     name: draft.name.trim(),
+    goal: draft.goal?.trim() || null,
     instagramAccountId: draft.instagramAccountId,
     ...buildTriggerFields(draft),
     matchAnyWord: draft.matchAnyWord,
@@ -98,10 +101,16 @@ export function buildAutomationPayload(draft) {
     wholeWordMatch: draft.wholeWordMatch,
     dmMessage: draft.dmMessage.trim(),
     openingDmEnabled: draft.openingDmEnabled,
-    openingDmMessage: draft.openingDmEnabled ? draft.openingDmMessage.trim() : null,
-    openingDmButtonLabel: draft.openingDmEnabled ? draft.openingDmButtonLabel.trim() : null,
+    openingDmMessage: draft.openingDmEnabled
+      ? draft.openingDmMessage.trim()
+      : null,
+    openingDmButtonLabel: draft.openingDmEnabled
+      ? draft.openingDmButtonLabel.trim()
+      : null,
     requireFollow: draft.requireFollow,
-    followPromptMessage: draft.requireFollow ? draft.followPromptMessage.trim() : "",
+    followPromptMessage: draft.requireFollow
+      ? draft.followPromptMessage.trim()
+      : "",
     followPromptButtonLabel: draft.requireFollow
       ? draft.followPromptButtonLabel.trim() || "i'm following"
       : "",

@@ -4,8 +4,11 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../../src/api/client";
 import { useAuth } from "../../../../src/auth/AuthContext";
-import { canManageWorkspace } from "../../../../src/lib/workspace-access";
-import { buildTriggerFields, validateAll } from "../../../../src/lib/campaign-validation";
+import { canManageCampaigns } from "../../../../src/lib/workspace-access";
+import {
+  buildTriggerFields,
+  validateAll,
+} from "../../../../src/lib/campaign-validation";
 import CampaignPreviewSheet from "../../../../src/ui/CampaignPreviewSheet";
 import KeywordChipInput from "../../../../src/ui/KeywordChipInput";
 import Skeleton from "../../../../src/ui/Skeleton";
@@ -21,7 +24,7 @@ export default function EditCampaignScreen() {
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { role } = useAuth();
-  const canManage = canManageWorkspace(role);
+  const canManage = canManageCampaigns(role);
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["campaigns", "all"],
@@ -48,16 +51,19 @@ export default function EditCampaignScreen() {
     const secondLink = campaign.trackedLinks?.[1];
     const hydrated = {
       name: campaign.name ?? "",
+      goal: campaign.goal ?? "",
       triggerScope: campaign.matchAnyPost
         ? "any"
         : campaign.pendingNextReel
-          ? "next"
-          : campaign.postId
-            ? "specific"
-            : "dm",
-      dmTriggerAlso: Boolean(campaign.dmTriggerEnabled) && Boolean(
-        campaign.matchAnyPost || campaign.pendingNextReel || campaign.postId
-      ),
+        ? "next"
+        : campaign.postId
+        ? "specific"
+        : "dm",
+      dmTriggerAlso:
+        Boolean(campaign.dmTriggerEnabled) &&
+        Boolean(
+          campaign.matchAnyPost || campaign.pendingNextReel || campaign.postId
+        ),
       postId: campaign.postId ?? null,
       postUrl: campaign.postUrl ?? null,
       keywords: campaign.keywords ?? [],
@@ -69,7 +75,8 @@ export default function EditCampaignScreen() {
       openingDmButtonLabel: campaign.openingDmButtonLabel ?? "",
       requireFollow: Boolean(campaign.requireFollow),
       followPromptMessage: campaign.followPromptMessage ?? "",
-      followPromptButtonLabel: campaign.followPromptButtonLabel ?? "i'm following",
+      followPromptButtonLabel:
+        campaign.followPromptButtonLabel ?? "i'm following",
       trackedDestinationUrl: link?.destinationUrl ?? "",
       linkButtonLabel: campaign.linkButtonLabel ?? "Open link",
       secondaryDestinationUrl: secondLink?.destinationUrl ?? "",
@@ -80,8 +87,8 @@ export default function EditCampaignScreen() {
       publicReplyMessages: campaign.publicReplyMessages?.length
         ? campaign.publicReplyMessages
         : campaign.publicReplyMessage
-          ? [campaign.publicReplyMessage]
-          : [""],
+        ? [campaign.publicReplyMessage]
+        : [""],
       isActive: Boolean(campaign.isActive),
     };
     setForm(hydrated);
@@ -92,36 +99,50 @@ export default function EditCampaignScreen() {
   }
 
   const update = useMutation({
-    mutationFn: (body) => apiFetch(`/api/automations?id=${id}`, { method: "PATCH", body }),
+    mutationFn: (body) =>
+      apiFetch(`/api/automations?id=${id}`, { method: "PATCH", body }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       navigation.goBack();
     },
     onError: (err) => {
-      setError(err instanceof ApiError ? err.message : "Could not update campaign");
+      setError(
+        err instanceof ApiError ? err.message : "Could not update campaign"
+      );
     },
   });
 
-  const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+  const setField = (key, value) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   const handleSubmit = () => {
     if (!form) return;
-    const err = validateAll({ ...form, instagramAccountId: campaign.instagramAccountId });
+    const err = validateAll({
+      ...form,
+      instagramAccountId: campaign.instagramAccountId,
+    });
     if (err) return setError(err);
     setError(null);
 
     const full = {
       name: form.name.trim(),
+      goal: form.goal.trim() || null,
       ...buildTriggerFields(form),
       matchAnyWord: form.matchAnyWord,
       keywords: form.matchAnyWord ? [] : form.keywords,
       wholeWordMatch: form.wholeWordMatch,
       dmMessage: form.dmMessage.trim(),
       openingDmEnabled: form.openingDmEnabled,
-      openingDmMessage: form.openingDmEnabled ? form.openingDmMessage.trim() : null,
-      openingDmButtonLabel: form.openingDmEnabled ? form.openingDmButtonLabel.trim() : null,
+      openingDmMessage: form.openingDmEnabled
+        ? form.openingDmMessage.trim()
+        : null,
+      openingDmButtonLabel: form.openingDmEnabled
+        ? form.openingDmButtonLabel.trim()
+        : null,
       requireFollow: form.requireFollow,
-      followPromptMessage: form.requireFollow ? form.followPromptMessage.trim() : "",
+      followPromptMessage: form.requireFollow
+        ? form.followPromptMessage.trim()
+        : "",
       followPromptButtonLabel: form.requireFollow
         ? form.followPromptButtonLabel.trim() || "i'm following"
         : "",
@@ -141,17 +162,26 @@ export default function EditCampaignScreen() {
     // updateAutomationSchema treats every field as independently optional.
     const initialFull = {
       name: initial.name,
+      goal: initial.goal.trim() || null,
       ...buildTriggerFields(initial),
       matchAnyWord: initial.matchAnyWord,
       keywords: initial.matchAnyWord ? [] : initial.keywords,
       wholeWordMatch: initial.wholeWordMatch,
       dmMessage: initial.dmMessage,
       openingDmEnabled: initial.openingDmEnabled,
-      openingDmMessage: initial.openingDmEnabled ? initial.openingDmMessage : null,
-      openingDmButtonLabel: initial.openingDmEnabled ? initial.openingDmButtonLabel : null,
+      openingDmMessage: initial.openingDmEnabled
+        ? initial.openingDmMessage
+        : null,
+      openingDmButtonLabel: initial.openingDmEnabled
+        ? initial.openingDmButtonLabel
+        : null,
       requireFollow: initial.requireFollow,
-      followPromptMessage: initial.requireFollow ? initial.followPromptMessage : "",
-      followPromptButtonLabel: initial.requireFollow ? initial.followPromptButtonLabel : "",
+      followPromptMessage: initial.requireFollow
+        ? initial.followPromptMessage
+        : "",
+      followPromptButtonLabel: initial.requireFollow
+        ? initial.followPromptButtonLabel
+        : "",
       trackedDestinationUrl: initial.trackedDestinationUrl,
       secondaryDestinationUrl: initial.secondaryDestinationUrl,
       secondaryButtonLabel: initial.secondaryButtonLabel,
@@ -178,7 +208,10 @@ export default function EditCampaignScreen() {
     // wouldn't otherwise be in this diff (it's unchanged), and the label
     // edit would silently be dropped with no error. Send both whenever
     // either changed.
-    if ("secondaryButtonLabel" in diff && !("secondaryDestinationUrl" in diff)) {
+    if (
+      "secondaryButtonLabel" in diff &&
+      !("secondaryDestinationUrl" in diff)
+    ) {
       diff.secondaryDestinationUrl = full.secondaryDestinationUrl;
     }
 
@@ -215,13 +248,17 @@ export default function EditCampaignScreen() {
     );
   }
 
-  const publicReplyMessages = form.publicReplyMessages.length ? form.publicReplyMessages : [""];
+  const publicReplyMessages = form.publicReplyMessages.length
+    ? form.publicReplyMessages
+    : [""];
 
   return (
     <View className="flex-1 bg-background">
       <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
         <View className="flex-row items-center justify-between">
-          <Text className="text-lg font-bold text-foreground">Edit campaign</Text>
+          <Text className="text-lg font-bold text-foreground">
+            Edit campaign
+          </Text>
           <Pressable onPress={() => setPreviewOpen(true)}>
             <Text className="text-sm font-medium text-accent">Preview</Text>
           </Pressable>
@@ -237,9 +274,22 @@ export default function EditCampaignScreen() {
           />
         </Field>
 
+        <Field label="Business goal (optional)">
+          <TextInput
+            value={form.goal}
+            onChangeText={(text) => setField("goal", text)}
+            placeholder="Example: Book qualified consultations"
+            placeholderTextColor="#9b9ba3"
+            maxLength={120}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
+          />
+        </Field>
+
         <Section title="And this comment has">
           <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
-            <Text className="flex-1 pr-3 text-sm text-foreground">Match any word</Text>
+            <Text className="flex-1 pr-3 text-sm text-foreground">
+              Match any word
+            </Text>
             <Toggle
               value={form.matchAnyWord}
               onValueChange={(value) => setField("matchAnyWord", value)}
@@ -252,7 +302,9 @@ export default function EditCampaignScreen() {
             />
           ) : null}
           <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
-            <Text className="flex-1 pr-3 text-sm text-foreground">Match whole words only</Text>
+            <Text className="flex-1 pr-3 text-sm text-foreground">
+              Match whole words only
+            </Text>
             <Toggle
               value={form.wholeWordMatch}
               onValueChange={(value) => setField("wholeWordMatch", value)}
@@ -261,7 +313,9 @@ export default function EditCampaignScreen() {
           {form.triggerScope !== "dm" ? (
             <View className="flex-row items-center justify-between rounded-lg border border-border px-3 py-3">
               <View className="flex-1 pr-3">
-                <Text className="text-sm text-foreground">Also reply to DMs and Story replies</Text>
+                <Text className="text-sm text-foreground">
+                  Also reply to DMs and Story replies
+                </Text>
                 <Text className="mt-0.5 text-xs text-muted">
                   Only confirmed followers get the link.
                 </Text>
@@ -273,8 +327,8 @@ export default function EditCampaignScreen() {
             </View>
           ) : (
             <Text className="text-xs text-muted">
-              This campaign fires on DMs and Story replies only. Followers get the link; everyone
-              else gets a follow prompt first.
+              This campaign fires on DMs and Story replies only. Followers get
+              the link; everyone else gets a follow prompt first.
             </Text>
           )}
         </Section>
@@ -282,7 +336,9 @@ export default function EditCampaignScreen() {
         <Section title="They will get">
           <View className="gap-3 rounded-lg border border-border p-3">
             <View className="flex-row items-center justify-between">
-              <Text className="flex-1 pr-3 text-sm text-foreground">An opening DM</Text>
+              <Text className="flex-1 pr-3 text-sm text-foreground">
+                An opening DM
+              </Text>
               <Toggle
                 value={form.openingDmEnabled}
                 onValueChange={(value) => setField("openingDmEnabled", value)}
@@ -302,7 +358,9 @@ export default function EditCampaignScreen() {
                 />
                 <TextInput
                   value={form.openingDmButtonLabel}
-                  onChangeText={(text) => setField("openingDmButtonLabel", text)}
+                  onChangeText={(text) =>
+                    setField("openingDmButtonLabel", text)
+                  }
                   placeholderTextColor="#9b9ba3"
                   maxLength={64}
                   className="rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
@@ -313,7 +371,9 @@ export default function EditCampaignScreen() {
 
           <View className="gap-3 rounded-lg border border-border p-3">
             <View className="flex-row items-center justify-between">
-              <Text className="flex-1 pr-3 text-sm text-foreground">A follow requirement first</Text>
+              <Text className="flex-1 pr-3 text-sm text-foreground">
+                A follow requirement first
+              </Text>
               <Toggle
                 value={form.requireFollow}
                 onValueChange={(value) => setField("requireFollow", value)}
@@ -333,7 +393,9 @@ export default function EditCampaignScreen() {
                 />
                 <TextInput
                   value={form.followPromptButtonLabel}
-                  onChangeText={(text) => setField("followPromptButtonLabel", text)}
+                  onChangeText={(text) =>
+                    setField("followPromptButtonLabel", text)
+                  }
                   placeholderTextColor="#9b9ba3"
                   maxLength={20}
                   className="rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
@@ -360,7 +422,9 @@ export default function EditCampaignScreen() {
               <View className="gap-2">
                 <TextInput
                   value={form.trackedDestinationUrl}
-                  onChangeText={(text) => setField("trackedDestinationUrl", text)}
+                  onChangeText={(text) =>
+                    setField("trackedDestinationUrl", text)
+                  }
                   placeholder="https://yourlink.com/offer"
                   placeholderTextColor="#9b9ba3"
                   autoCapitalize="none"
@@ -378,7 +442,9 @@ export default function EditCampaignScreen() {
                   <View className="gap-2 border-t border-border pt-2">
                     <TextInput
                       value={form.secondaryDestinationUrl}
-                      onChangeText={(text) => setField("secondaryDestinationUrl", text)}
+                      onChangeText={(text) =>
+                        setField("secondaryDestinationUrl", text)
+                      }
                       placeholder="https://yourlink.com/second"
                       placeholderTextColor="#9b9ba3"
                       autoCapitalize="none"
@@ -387,7 +453,9 @@ export default function EditCampaignScreen() {
                     />
                     <TextInput
                       value={form.secondaryButtonLabel}
-                      onChangeText={(text) => setField("secondaryButtonLabel", text)}
+                      onChangeText={(text) =>
+                        setField("secondaryButtonLabel", text)
+                      }
                       placeholderTextColor="#9b9ba3"
                       maxLength={20}
                       className="rounded-lg border border-border bg-surface px-3 py-2 text-foreground"
@@ -398,7 +466,9 @@ export default function EditCampaignScreen() {
                     onPress={() => setSecondLinkOpen(true)}
                     className="rounded-lg border border-border py-2"
                   >
-                    <Text className="text-center text-sm text-muted">+ Add a second link</Text>
+                    <Text className="text-center text-sm text-muted">
+                      + Add a second link
+                    </Text>
                   </Pressable>
                 )}
               </View>
@@ -407,14 +477,18 @@ export default function EditCampaignScreen() {
                 onPress={() => setLinkOpen(true)}
                 className="rounded-lg border border-border py-2"
               >
-                <Text className="text-center text-sm text-muted">+ Add a link</Text>
+                <Text className="text-center text-sm text-muted">
+                  + Add a link
+                </Text>
               </Pressable>
             )}
           </View>
 
           <View className="gap-3 rounded-lg border border-border p-3">
             <View className="flex-row items-center justify-between">
-              <Text className="flex-1 pr-3 text-sm text-foreground">A follow-up thank-you message</Text>
+              <Text className="flex-1 pr-3 text-sm text-foreground">
+                A follow-up thank-you message
+              </Text>
               <Toggle
                 value={form.followUpEnabled}
                 onValueChange={(value) => setField("followUpEnabled", value)}
@@ -453,7 +527,9 @@ export default function EditCampaignScreen() {
                       onChangeText={(text) =>
                         setField(
                           "publicReplyMessages",
-                          publicReplyMessages.map((m, idx) => (idx === i ? text : m))
+                          publicReplyMessages.map((m, idx) =>
+                            idx === i ? text : m
+                          )
                         )
                       }
                       placeholderTextColor="#9b9ba3"
@@ -478,10 +554,15 @@ export default function EditCampaignScreen() {
                 {publicReplyMessages.length < 10 ? (
                   <Pressable
                     onPress={() =>
-                      setField("publicReplyMessages", [...publicReplyMessages, ""])
+                      setField("publicReplyMessages", [
+                        ...publicReplyMessages,
+                        "",
+                      ])
                     }
                   >
-                    <Text className="text-xs font-medium text-accent">+ Add another reply</Text>
+                    <Text className="text-xs font-medium text-accent">
+                      + Add another reply
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -491,7 +572,10 @@ export default function EditCampaignScreen() {
 
         <View className="flex-row items-center justify-between">
           <Text className="text-sm text-foreground">Active</Text>
-          <Toggle value={form.isActive} onValueChange={(value) => setField("isActive", value)} />
+          <Toggle
+            value={form.isActive}
+            onValueChange={(value) => setField("isActive", value)}
+          />
         </View>
 
         {error ? <Text className="text-sm text-error">{error}</Text> : null}
@@ -499,7 +583,9 @@ export default function EditCampaignScreen() {
         <Pressable
           onPress={handleSubmit}
           disabled={update.isPending}
-          className={`rounded-lg px-4 py-3 ${update.isPending ? "bg-accent-hover opacity-60" : "bg-accent"}`}
+          className={`rounded-lg px-4 py-3 ${
+            update.isPending ? "bg-accent-hover opacity-60" : "bg-accent"
+          }`}
         >
           <Text className="text-center text-sm font-semibold text-background">
             {update.isPending ? "Saving..." : "Save changes"}

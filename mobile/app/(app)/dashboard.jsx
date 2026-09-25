@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import InAppBrowser from "react-native-inappbrowser-reborn";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,7 +41,7 @@ export default function DashboardScreen() {
           ephemeralWebSession: false,
         });
       } else {
-        await InAppBrowser.open(authorizeUrl);
+        await Linking.openURL(authorizeUrl);
       }
     } catch (err) {
       Alert.alert(
@@ -110,16 +110,16 @@ export default function DashboardScreen() {
       </Text>
 
       <View className="flex-row flex-wrap gap-3">
-        <StatTile label="DMs Today" value={stats?.dmsSentToday ?? 0} />
-        <StatTile label="DMs This Week" value={stats?.dmsSentWeek ?? 0} />
-        <StatTile label="DMs This Month" value={stats?.dmsSentMonth ?? 0} />
-        <StatTile label="Total DMs" value={stats?.totalDMs ?? 0} />
-        <StatTile label="Clicks" value={stats?.clicksThisMonth ?? 0} />
-        <StatTile label="CTR" value={`${stats?.ctrThisMonth ?? 0}%`} />
+        <StatTile label="Delivered Today" value={stats?.dmsSentToday ?? 0} />
+        <StatTile label="Delivered This Week" value={stats?.dmsSentWeek ?? 0} />
+        <StatTile label="Delivered This Month" value={stats?.dmsSentMonth ?? 0} />
+        <StatTile label="Total Delivered" value={stats?.totalDMs ?? 0} />
+        <StatTile label="Link Opens" value={stats?.clicksThisMonth ?? 0} />
+        <StatTile label="Clicks / DM" value={`${stats?.ctrThisMonth ?? 0}%`} />
       </View>
 
       <Card>
-        <Text className="mb-4 text-sm font-semibold text-foreground">DMs — Last 7 Days</Text>
+        <Text className="mb-4 text-sm font-semibold text-foreground">Offer DMs — Last 7 Days</Text>
         <View className="h-40 flex-row items-end gap-2">
           {dailyDMs.map((day) => (
             <View key={day.date} className="flex-1 items-center gap-1">
