@@ -27,7 +27,7 @@ splash should match that visual language.
 ```js
 icon: "./assets/icon.png",
 android: {
-  package: "com.openreply.app",
+  package: "com.autoreply.app",
   adaptiveIcon: {
     foregroundImage: "./assets/adaptive-icon-foreground.png",
     backgroundColor: "#0b0b0d",

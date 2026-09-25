@@ -26,13 +26,13 @@ maestro test mobile/e2e/flows/  # runs every flow in the directory
 ### `flows/sign-in.yaml` — email OTP sign-in
 
 ```yaml
-appId: com.openreply.app
+appId: com.autoreply.app
 ---
 - launchApp
 - assertVisible: "Sign in"
 - tapOn:
     id: "email-input"
-- inputText: "demo@openreply.test"
+- inputText: "demo@autoreply.test"
 - tapOn: "Send code"
 - assertVisible: "Enter your code"
 # In a MOBILE_OTP_DEV_ECHO build, the dev code is shown as hint text on
@@ -49,7 +49,7 @@ appId: com.openreply.app
 ### `flows/dashboard.yaml` — dashboard renders real data
 
 ```yaml
-appId: com.openreply.app
+appId: com.autoreply.app
 ---
 - launchApp
 # Assumes a prior successful sign-in this session (session persists via
@@ -66,7 +66,7 @@ appId: com.openreply.app
 ### `flows/create-campaign.yaml` — full wizard, end to end
 
 ```yaml
-appId: com.openreply.app
+appId: com.autoreply.app
 ---
 - runFlow: sign-in.yaml
 - tapOn: "Campaigns"
@@ -100,7 +100,7 @@ appId: com.openreply.app
 ### `flows/inbox-reply.yaml` — send a DM reply from the inbox
 
 ```yaml
-appId: com.openreply.app
+appId: com.autoreply.app
 ---
 - runFlow: sign-in.yaml
 - tapOn: "Inbox"
@@ -121,7 +121,7 @@ appId: com.openreply.app
 ### `flows/campaign-report-share.yaml` — campaign detail + native share
 
 ```yaml
-appId: com.openreply.app
+appId: com.autoreply.app
 ---
 - runFlow: sign-in.yaml
 - tapOn: "Campaigns"

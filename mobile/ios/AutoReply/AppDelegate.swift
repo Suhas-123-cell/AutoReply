@@ -37,7 +37,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     return true
   }
 
-  // Linking API — required for openreply:// deep links (Instagram OAuth
+  // Linking API — required for autoreply:// deep links (Instagram OAuth
   // callback, push-notification taps). See src/navigation/linking.js.
   func application(
     _ app: UIApplication,
