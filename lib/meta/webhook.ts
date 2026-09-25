@@ -66,6 +66,7 @@ interface WebhookEntry {
     };
   }>;
   messaging?: Array<{
+    timestamp?: number;
     sender?: { id?: string };
     recipient?: { id?: string };
     postback?: { mid?: string; title?: string; payload?: string };
@@ -90,6 +91,7 @@ export interface WebhookMessageEvent {
   senderId: string;
   // True when Instagram delivered this DM as a reply to the account's Story.
   isStoryReply: boolean;
+  interactionTimestamp?: number;
 }
 
 export interface WebhookPostbackEvent {
@@ -97,6 +99,7 @@ export interface WebhookPostbackEvent {
   userId: string;
   payload: string;
   mid?: string;
+  interactionTimestamp?: number;
 }
 
 export interface WebhookReadEvent {
@@ -178,6 +181,7 @@ export function parsePostbackEvents(
         userId,
         payload: postbackPayload,
         mid: messaging.postback?.mid,
+        interactionTimestamp: messaging.timestamp ?? entry.time * 1000,
       });
     }
   }
@@ -224,6 +228,7 @@ export function parseMessageEvents(
         messageText: text,
         senderId,
         isStoryReply: Boolean(message.reply_to?.story),
+        interactionTimestamp: messaging.timestamp ?? entry.time * 1000,
       });
     }
   }

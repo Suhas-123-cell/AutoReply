@@ -26,6 +26,17 @@ export async function GET(request: NextRequest) {
   );
   const status = searchParams.get("status");
   const instagramAccountId = searchParams.get("instagramAccountId");
+  if (
+    instagramAccountId &&
+    instagramAccountId !== "all" &&
+    allowedAccountIds &&
+    !allowedAccountIds.has(instagramAccountId)
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Account not found" },
+      { status: 404 }
+    );
+  }
   const skip = (page - 1) * limit;
   const parsedStatus =
     status && Object.values(DmStatus).includes(status as DmStatus)

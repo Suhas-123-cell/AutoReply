@@ -36,6 +36,19 @@ import {
 } from "@/lib/tracking/message";
 import { enqueuePush } from "@/lib/push/notify";
 
+// The original event time survives retries; a fresh queue job must not reset
+// Meta's 24-hour response window. Old jobs fall back to their enqueue time.
+export function withinMessagingWindow(eventTime?: number, queuedAt?: number) {
+  const timestamp = eventTime ?? queuedAt;
+  if (timestamp === undefined) return true;
+  return (
+    typeof timestamp === "number" &&
+    Number.isFinite(timestamp) &&
+    timestamp <= Date.now() + 60_000 &&
+    Date.now() - timestamp < 24 * 60 * 60 * 1000
+  );
+}
+
 const BACKOFF_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000];
 
 function formatError(error: unknown): string {
@@ -46,6 +59,19 @@ function formatError(error: unknown): string {
     return error.message;
   }
   return "Unknown error";
+}
+
+// A timed-out or server-failed template request may already have reached the
+// recipient. Sending a text fallback after that would create a duplicate DM.
+// Fall back only when Meta explicitly rejects the template shape itself.
+export function canFallbackFromButtonTemplate(error: unknown): boolean {
+  return (
+    error instanceof MetaApiError &&
+    error.code === 100 &&
+    /button|template|attachment|unsupported|invalid parameter/i.test(
+      error.message
+    )
+  );
 }
 
 type WorkerTrackedLink = {
@@ -65,7 +91,8 @@ function buildLinkButtons(
 ): { title: string; url: string }[] {
   return trackedLinks.slice(0, 3).map((link, index) => ({
     url: buildTrackedUrl(link.slug),
-    title: (index === 0 ? primaryLabel : link.label) || link.label || "Open link",
+    title:
+      (index === 0 ? primaryLabel : link.label) || link.label || "Open link",
   }));
 }
 
@@ -83,7 +110,9 @@ function buildInlineLinkFallback(
   const base =
     renderMessageWithTracking({ message, commenterName, trackedLinks }) ||
     bodyText;
-  const extraUrls = trackedLinks.slice(1).map((link) => buildTrackedUrl(link.slug));
+  const extraUrls = trackedLinks
+    .slice(1)
+    .map((link) => buildTrackedUrl(link.slug));
   return extraUrls.length > 0 ? `${base}\n${extraUrls.join("\n")}` : base;
 }
 
@@ -171,7 +200,10 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     // already sent but whose public reply never posted (e.g. it hit a rate
     // limit) must still come back so the public reply can be retried.
     if (existingLog?.status === "SKIPPED_PLAN_LIMIT") continue;
-    if (alreadyDmd && (alreadyPublicReplied || !automation.publicReplyEnabled)) {
+    if (
+      alreadyDmd &&
+      (alreadyPublicReplied || !automation.publicReplyEnabled)
+    ) {
       continue;
     }
 
@@ -273,8 +305,8 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
       automation.publicReplyMessages.length > 0
         ? automation.publicReplyMessages
         : automation.publicReplyMessage
-          ? [automation.publicReplyMessage]
-          : [];
+        ? [automation.publicReplyMessage]
+        : [];
     if (
       automation.publicReplyEnabled &&
       replyPool.length > 0 &&
@@ -302,7 +334,10 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         await prisma.dmLog
           .update({
             where: {
-              automationId_commentId: { automationId: automation.id, commentId },
+              automationId_commentId: {
+                automationId: automation.id,
+                commentId,
+              },
             },
             data: { publicReplyError: formatError(error) },
           })
@@ -405,7 +440,9 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         // burst-clearing retry storm can't burn through the hourly budget.
         // Both are included in the jobId so repeated retries of either kind
         // never collide on the same BullMQ job id.
-        const nextRequeueAttempt = isBurst ? requeueAttempt : requeueAttempt + 1;
+        const nextRequeueAttempt = isBurst
+          ? requeueAttempt
+          : requeueAttempt + 1;
         const nextBurstRequeueAttempt = isBurst
           ? burstRequeueAttempt + 1
           : burstRequeueAttempt;
@@ -441,7 +478,10 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     // else gets the "follow me first" prompt (re-verified on tap).
     let sendFollowPrompt = false;
     if (automation.requireFollow && !useOpeningDm) {
-      const alreadyFollows = await getUserFollowStatus(accessToken, commenterId);
+      const alreadyFollows = await getUserFollowStatus(
+        accessToken,
+        commenterId
+      );
       sendFollowPrompt = alreadyFollows !== true;
     }
 
@@ -464,9 +504,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         );
       } else if (sendFollowPrompt) {
         const promptText = renderMessageWithoutLink({
-          message:
-            automation.followPromptMessage ||
-            "quick favor before i send your link. i don't make any money from this, it's free. if you want to support me, just don't unfollow after, and star the repo on github if it helps you. tap the button once you're following and i'll send it over",
+          message: automation.followPromptMessage || DEFAULT_FOLLOW_PROMPT,
           commenterName,
         });
         await sendPrivateReplyWithButton(
@@ -498,6 +536,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             buttons
           );
         } catch (buttonError) {
+          if (!canFallbackFromButtonTemplate(buttonError)) throw buttonError;
           // Button template rejected; send as text with inline links instead.
           console.log(
             "[DM Worker] Button template rejected, falling back to inline link:",
@@ -539,6 +578,11 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         },
         data: {
           status: "SENT",
+          messageStage: useOpeningDm
+            ? "OPENING"
+            : sendFollowPrompt
+            ? "FOLLOW_PROMPT"
+            : "DELIVERY",
           dmSentAt: new Date(),
           errorMessage: null,
         },
@@ -547,11 +591,16 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
       await enqueuePush({
         kind: "new_lead",
         workspaceId: automation.workspaceId,
-        title: "New lead",
-        body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+        title: "DM sent",
+        body: `${commenterName ?? "Someone"} just got a DM from "${
+          automation.name
+        }"`,
         data: { deepLink: `/logs?highlight=${sentLog.id}` },
       }).catch((pushError) =>
-        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+        console.error(
+          "[DM Worker] Failed to enqueue push:",
+          formatError(pushError)
+        )
       );
     } catch (error) {
       await releaseWorkspaceDMReservation(
@@ -580,7 +629,10 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         body: `A DM failed to send for "${automation.name}"`,
         data: { deepLink: `/logs?highlight=${failedLog.id}` },
       }).catch((pushError) =>
-        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+        console.error(
+          "[DM Worker] Failed to enqueue push:",
+          formatError(pushError)
+        )
       );
 
       throw error;
@@ -595,11 +647,13 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
  */
 async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   const { instagramAccountId, userId, payload, fallback } = job.data;
+  // Discard legacy read-receipt jobs already waiting in Redis.
+  if (fallback) return;
+  if (!withinMessagingWindow(job.data.interactionTimestamp, job.timestamp))
+    return;
 
-  // `strictfollowcheck:` is the DM/Story-reply path's button: the link is
-  // only ever delivered on a confirmed follow, regardless of the campaign's
-  // requireFollow setting, and an unverifiable status re-prompts instead of
-  // falling open.
+  // `strictfollowcheck:` is retained for buttons sent by older workers. The
+  // current campaign setting still decides whether the follow check applies.
   const isStrictFollowCheck = payload.startsWith("strictfollowcheck:");
   const isFollowCheck =
     isStrictFollowCheck || payload.startsWith("followcheck:");
@@ -608,8 +662,8 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     isStrictFollowCheck
       ? "strictfollowcheck:".length
       : isFollowCheck
-        ? "followcheck:".length
-        : "reveal:".length
+      ? "followcheck:".length
+      : "reveal:".length
   );
 
   const automation = await prisma.automation.findFirst({
@@ -632,21 +686,20 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     return;
   }
 
-  // Duplicate sends are enabled: every button tap re-sends the reveal
-  // instead of only firing once per person.
-  const dedupeId = `reveal:${userId}`;
-
-  if (fallback) {
-    const existingReveal = await prisma.dmLog.findUnique({
-      where: {
-        automationId_commentId: {
-          automationId: automation.id,
-          commentId: dedupeId,
-        },
+  // Every interaction has its own stable dedup key; retrying the same tap
+  // never re-sends a delivered link. Legacy jobs use the per-recipient key.
+  const dedupeId = job.data.mid
+    ? `reveal:${userId}:${job.data.mid}`
+    : `reveal:${userId}`;
+  const existingReveal = await prisma.dmLog.findUnique({
+    where: {
+      automationId_commentId: {
+        automationId: automation.id,
+        commentId: dedupeId,
       },
-    });
-    if (existingReveal?.status === "SENT") return;
-  }
+    },
+  });
+  if (existingReveal?.status === "SENT") return;
 
   // Personalize {username} from the opening DM log for this user, if present.
   const openingLog = await prisma.dmLog.findFirst({
@@ -662,24 +715,14 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     return;
   }
 
-  // Follow-gate: before revealing the link, verify the user follows. On a
-  // `followcheck:` tap a non-follower gets the prompt again (no quota spent);
-  // on a read fallback a non-follower is silently skipped — the gate must not
-  // be bypassable by just reading the DM and waiting. Following, or
-  // unverifiable (null), falls through and delivers the link — fail-open so a
-  // real follower is never trapped.
-  if (
-    isStrictFollowCheck ||
-    ((isFollowCheck || fallback) && automation.requireFollow)
-  ) {
+  // Follow-gate: when enabled, reveal only after a confirmed follow. Unknown
+  // status stays blocked so the setting cannot be bypassed.
+  if (automation.requireFollow) {
     const follows = await getUserFollowStatus(accessToken, userId);
-    const blocked = isStrictFollowCheck ? follows !== true : follows === false;
+    const blocked = follows !== true;
     if (blocked) {
-      if (fallback) return;
       const promptText = renderMessageWithoutLink({
-        message:
-          automation.followPromptMessage ||
-          "quick favor before i send your link. i don't make any money from this, it's free. if you want to support me, just don't unfollow after, and star the repo on github if it helps you. tap the button once you're following and i'll send it over",
+        message: automation.followPromptMessage || DEFAULT_FOLLOW_PROMPT,
         commenterName,
       });
       try {
@@ -707,7 +750,10 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   if (!usage.allowed) {
     await prisma.dmLog.upsert({
       where: {
-        automationId_commentId: { automationId: automation.id, commentId: dedupeId },
+        automationId_commentId: {
+          automationId: automation.id,
+          commentId: dedupeId,
+        },
       },
       create: {
         workspaceId: automation.workspaceId,
@@ -747,6 +793,7 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
           buttons
         );
       } catch (buttonError) {
+        if (!canFallbackFromButtonTemplate(buttonError)) throw buttonError;
         // Button template rejected; send as text with inline links instead.
         console.log(
           "[DM Worker] Button template rejected in postback, falling back to inline link:",
@@ -801,7 +848,10 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     }
     const sentLog = await prisma.dmLog.upsert({
       where: {
-        automationId_commentId: { automationId: automation.id, commentId: dedupeId },
+        automationId_commentId: {
+          automationId: automation.id,
+          commentId: dedupeId,
+        },
       },
       create: {
         workspaceId: automation.workspaceId,
@@ -812,25 +862,42 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
         commentText: "(button tap)",
         commentId: dedupeId,
         status: "SENT",
+        messageStage: "DELIVERY",
         dmSentAt: new Date(),
       },
-      update: { status: "SENT", dmSentAt: new Date(), errorMessage: null },
+      update: {
+        status: "SENT",
+        messageStage: "DELIVERY",
+        dmSentAt: new Date(),
+        errorMessage: null,
+      },
     });
 
     await enqueuePush({
       kind: "new_lead",
       workspaceId: automation.workspaceId,
-      title: "New lead",
-      body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+      title: "DM sent",
+      body: `${commenterName ?? "Someone"} just got a DM from "${
+        automation.name
+      }"`,
       data: { deepLink: `/logs?highlight=${sentLog.id}` },
     }).catch((pushError) =>
-      console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+      console.error(
+        "[DM Worker] Failed to enqueue push:",
+        formatError(pushError)
+      )
     );
   } catch (error) {
-    await releaseWorkspaceDMReservation(automation.workspaceId, usage.periodStart);
+    await releaseWorkspaceDMReservation(
+      automation.workspaceId,
+      usage.periodStart
+    );
     const failedLog = await prisma.dmLog.upsert({
       where: {
-        automationId_commentId: { automationId: automation.id, commentId: dedupeId },
+        automationId_commentId: {
+          automationId: automation.id,
+          commentId: dedupeId,
+        },
       },
       create: {
         workspaceId: automation.workspaceId,
@@ -853,7 +920,10 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
       body: `A DM failed to send for "${automation.name}"`,
       data: { deepLink: `/logs?highlight=${failedLog.id}` },
     }).catch((pushError) =>
-      console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+      console.error(
+        "[DM Worker] Failed to enqueue push:",
+        formatError(pushError)
+      )
     );
 
     throw error;
@@ -867,17 +937,14 @@ const DEFAULT_FOLLOW_PROMPT =
  * Keyword-triggered autoreply for inbound DMs and Story replies. Campaigns
  * with `dmTriggerEnabled` whose keywords match the text reply to the sender.
  *
- * This path is ALWAYS follow-gated, independent of the campaign's
- * requireFollow flag: a confirmed follower gets the link immediately; anyone
- * else — including an unverifiable status — gets the follow prompt with a
- * `strictfollowcheck:` button that re-verifies (fail-closed) on tap. Unlike a
- * comment, a DM is first contact from someone who may never have seen the
- * post, so failing open here would hand the link to anyone whose status the
- * API happens not to resolve.
+ * The campaign owner chooses whether a follow is required. When enabled,
+ * unknown follow status keeps the link pending until a confirmed follow.
  */
 async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
   const { instagramAccountId, messageId, messageText, senderId, isStoryReply } =
     job.data;
+  if (!withinMessagingWindow(job.data.interactionTimestamp, job.timestamp))
+    return;
 
   const automations = await prisma.automation.findMany({
     where: {
@@ -910,7 +977,10 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
     if (!matchResult.matched) continue;
 
     const logKey = {
-      automationId_commentId: { automationId: automation.id, commentId: dedupeId },
+      automationId_commentId: {
+        automationId: automation.id,
+        commentId: dedupeId,
+      },
     };
     const existingLog = await prisma.dmLog.findUnique({ where: logKey });
     // A retry must never send a second reply to the same message.
@@ -957,8 +1027,9 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
     });
     const commenterName = priorLog?.commenterName ?? null;
 
-    const follows = await getUserFollowStatus(accessToken, senderId);
-    const sendFollowPrompt = follows !== true;
+    const sendFollowPrompt = automation.requireFollow
+      ? (await getUserFollowStatus(accessToken, senderId)) !== true
+      : false;
 
     const usage = await reserveWorkspaceDMSend(automation.workspaceId);
     if (!usage.allowed) {
@@ -982,7 +1053,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
             commenterName,
           }),
           automation.followPromptButtonLabel || "i'm following",
-          `strictfollowcheck:${automation.id}`
+          `followcheck:${automation.id}`
         );
       } else if (automation.trackedLinks.length > 0) {
         const bodyText =
@@ -996,9 +1067,13 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
             automation.instagramAccount.instagramId,
             senderId,
             bodyText,
-            buildLinkButtons(automation.trackedLinks, automation.linkButtonLabel)
+            buildLinkButtons(
+              automation.trackedLinks,
+              automation.linkButtonLabel
+            )
           );
         } catch (buttonError) {
+          if (!canFallbackFromButtonTemplate(buttonError)) throw buttonError;
           console.log(
             "[DM Worker] Button template rejected in message trigger, falling back to inline link:",
             formatError(buttonError)
@@ -1034,13 +1109,19 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
           ...logBase,
           commenterName,
           status: "SENT",
+          messageStage: sendFollowPrompt ? "FOLLOW_PROMPT" : "DELIVERY",
           dmSentAt: new Date(),
-          errorMessage: sendFollowPrompt ? "Follow prompt sent; link pending" : null,
+          errorMessage: sendFollowPrompt
+            ? "Follow prompt sent; link pending"
+            : null,
         },
         update: {
           status: "SENT",
+          messageStage: sendFollowPrompt ? "FOLLOW_PROMPT" : "DELIVERY",
           dmSentAt: new Date(),
-          errorMessage: sendFollowPrompt ? "Follow prompt sent; link pending" : null,
+          errorMessage: sendFollowPrompt
+            ? "Follow prompt sent; link pending"
+            : null,
         },
       });
 
@@ -1048,11 +1129,16 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
         await enqueuePush({
           kind: "new_lead",
           workspaceId: automation.workspaceId,
-          title: "New lead",
-          body: `${commenterName ?? "Someone"} just got a DM from "${automation.name}"`,
+          title: "DM sent",
+          body: `${commenterName ?? "Someone"} just got a DM from "${
+            automation.name
+          }"`,
           data: { deepLink: `/logs?highlight=${sentLog.id}` },
         }).catch((pushError) =>
-          console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+          console.error(
+            "[DM Worker] Failed to enqueue push:",
+            formatError(pushError)
+          )
         );
       }
     } catch (error) {
@@ -1068,7 +1154,10 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
         body: `A DM failed to send for "${automation.name}"`,
         data: { deepLink: `/logs?highlight=${failedLog.id}` },
       }).catch((pushError) =>
-        console.error("[DM Worker] Failed to enqueue push:", formatError(pushError))
+        console.error(
+          "[DM Worker] Failed to enqueue push:",
+          formatError(pushError)
+        )
       );
       throw error;
     }
@@ -1105,7 +1194,9 @@ async function recordWorkerFailure(
         workspaceId: account?.workspaceId ?? null,
         source: "WORKER",
         level: "ERROR",
-        message: `DM worker job ${job?.id ?? "unknown"} failed: ${error.message}`,
+        message: `DM worker job ${job?.id ?? "unknown"} failed: ${
+          error.message
+        }`,
         payload: {
           jobId: job?.id ?? null,
           attemptsMade: job?.attemptsMade ?? null,
@@ -1142,18 +1233,14 @@ async function recordWorkerFailure(
 }
 
 export function createDMWorker(): Worker<DmQueueJob> {
-  const worker = new Worker<DmQueueJob>(
-    "dm-processing",
-    processJob,
-    {
-      connection: getRedisConnection(),
-      concurrency: 5,
-      settings: {
-        backoffStrategy: (attemptsMade: number) =>
-          BACKOFF_DELAYS[Math.min(attemptsMade - 1, BACKOFF_DELAYS.length - 1)],
-      },
-    }
-  );
+  const worker = new Worker<DmQueueJob>("dm-processing", processJob, {
+    connection: getRedisConnection(),
+    concurrency: 5,
+    settings: {
+      backoffStrategy: (attemptsMade: number) =>
+        BACKOFF_DELAYS[Math.min(attemptsMade - 1, BACKOFF_DELAYS.length - 1)],
+    },
+  });
 
   worker.on("completed", (job) => {
     console.log(`[DM Worker] Job ${job.id} completed`);
@@ -1188,4 +1275,3 @@ export function createDMWorker(): Worker<DmQueueJob> {
 
   return worker;
 }
-
