@@ -36,6 +36,8 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/workspace-access", () => ({
   getCurrentWorkspaceContext: mockGetCurrentWorkspaceContext,
   canManageWorkspace: () => true,
+  canManageCampaigns: () => true,
+  getAccountAccessScope: () => Promise.resolve({ instagramAccountIds: null }),
 }));
 vi.mock("@/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("@/lib/tracking/analytics", () => ({

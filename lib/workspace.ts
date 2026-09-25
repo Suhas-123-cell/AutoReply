@@ -1,61 +1,12 @@
 import { prisma } from "@/lib/db/client";
 import type { Workspace, WorkspaceRole } from "@/app/generated/prisma/client";
 
-function normalizeInviteEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-export async function acceptPendingInvitationsForUser(
-  userId: string,
-  email?: string | null
-): Promise<void> {
-  if (!email) return;
-
-  const normalizedEmail = normalizeInviteEmail(email);
-  const now = new Date();
-  const invitations = await prisma.workspaceInvitation.findMany({
-    where: {
-      email: normalizedEmail,
-      status: "PENDING",
-      expiresAt: { gt: now },
-    },
-  });
-
-  for (const invitation of invitations) {
-    await prisma.$transaction([
-      prisma.workspaceMember.upsert({
-        where: {
-          workspaceId_userId: {
-            workspaceId: invitation.workspaceId,
-            userId,
-          },
-        },
-        create: {
-          workspaceId: invitation.workspaceId,
-          userId,
-          role: invitation.role,
-        },
-        update: {
-          role: invitation.role,
-        },
-      }),
-      prisma.workspaceInvitation.update({
-        where: { id: invitation.id },
-        data: {
-          status: "ACCEPTED",
-          acceptedAt: now,
-        },
-      }),
-    ]);
-  }
-}
-
-export async function getWorkspaceMembership(userId: string): Promise<{
+export async function getWorkspaceMembership(userId: string, workspaceId?: string | null): Promise<{
   workspace: Workspace;
   role: WorkspaceRole;
 } | null> {
   const membership = await prisma.workspaceMember.findFirst({
-    where: { userId },
+    where: { userId, ...(workspaceId ? { workspaceId } : {}) },
     include: { workspace: true },
     orderBy: { createdAt: "asc" },
   });
@@ -72,8 +23,6 @@ export async function ensureWorkspaceForUser(
   userId: string,
   email?: string | null
 ): Promise<Workspace> {
-  await acceptPendingInvitationsForUser(userId, email);
-
   const existingMembership = await getWorkspaceMembership(userId);
   if (existingMembership) {
     return existingMembership.workspace;
@@ -95,7 +44,7 @@ export async function ensureWorkspaceForUser(
   });
 }
 
-export async function getPrimaryWorkspace(userId: string): Promise<Workspace | null> {
-  const membership = await getWorkspaceMembership(userId);
+export async function getPrimaryWorkspace(userId: string, workspaceId?: string | null): Promise<Workspace | null> {
+  const membership = await getWorkspaceMembership(userId, workspaceId);
   return membership?.workspace ?? null;
 }

@@ -1,6 +1,7 @@
 import type { Workspace, WorkspaceRole } from "@/app/generated/prisma/client";
 import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
+import { headers } from "next/headers";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
 
 export type WorkspaceContext = {
@@ -12,6 +13,7 @@ export type WorkspaceContext = {
 
 const ROLE_ORDER: Record<WorkspaceRole, number> = {
   MEMBER: 1,
+  EDITOR: 1,
   ADMIN: 2,
   OWNER: 3,
 };
@@ -27,6 +29,10 @@ export function canManageWorkspace(role: WorkspaceRole) {
   return hasWorkspaceRole(role, "ADMIN");
 }
 
+export function canManageCampaigns(role: WorkspaceRole) {
+  return role === "EDITOR" || canManageWorkspace(role);
+}
+
 export function canManageBilling(role: WorkspaceRole) {
   return role === "OWNER";
 }
@@ -40,17 +46,13 @@ export type AccountAccessScope = {
   telegramAccountIds: Set<string> | null;
 };
 
-/**
- * Owners and admins always see every client account — scoping only ever
- * restricts a MEMBER, never grants extra reach to a manager role. A MEMBER
- * with zero MemberAccountAccess rows is unrestricted too (the default for
- * every member until an owner/admin explicitly assigns accounts), so this
- * feature is opt-in and doesn't change behavior for existing workspaces.
- */
+// Managers see all accounts. Members and editors use explicit grants; an
+// intentionally empty selection grants no access. Legacy unrestricted members
+// retain access until a manager changes their selection.
 export async function getAccountAccessScope(
   context: WorkspaceContext
 ): Promise<AccountAccessScope> {
-  if (context.role !== "MEMBER") {
+  if (canManageWorkspace(context.role)) {
     return { instagramAccountIds: null, telegramAccountIds: null };
   }
 
@@ -62,6 +64,7 @@ export async function getAccountAccessScope(
       },
     },
     select: {
+      accountAccessRestricted: true,
       accountAccess: {
         select: { instagramAccountId: true, telegramAccountId: true },
       },
@@ -69,7 +72,7 @@ export async function getAccountAccessScope(
   });
 
   const rows = membership?.accountAccess ?? [];
-  if (rows.length === 0) {
+  if (membership && !membership.accountAccessRestricted && rows.length === 0) {
     return { instagramAccountIds: null, telegramAccountIds: null };
   }
 
@@ -87,8 +90,9 @@ export async function getCurrentWorkspaceContext(): Promise<WorkspaceContext | n
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
+  const requestedWorkspaceId = (await headers()).get("x-workspace-id");
   const membership = await prisma.workspaceMember.findFirst({
-    where: { userId },
+    where: { userId, ...(requestedWorkspaceId ? { workspaceId: requestedWorkspaceId } : {}) },
     include: { workspace: true },
     orderBy: { createdAt: "asc" },
   });
@@ -101,6 +105,8 @@ export async function getCurrentWorkspaceContext(): Promise<WorkspaceContext | n
       role: membership.role,
     };
   }
+
+  if (requestedWorkspaceId) return null;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },

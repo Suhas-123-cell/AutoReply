@@ -119,6 +119,7 @@ model Workspace {
   dmLogs            DmLog[]
   trackedLinks      TrackedLink[]
   linkClicks        LinkClick[]
+  campaignOutcomes  CampaignOutcome[]
   webhookEvents     WebhookEvent[]
   operationalEvents OperationalEvent[]
   telegramAccounts    TelegramAccount[]
@@ -132,7 +133,8 @@ model WorkspaceMember {
   id          String        @id @default(cuid())
   workspaceId String
   userId      String
-  role        WorkspaceRole @default(OWNER)
+  role        WorkspaceRole @default(MEMBER)
+  accountAccessRestricted Boolean @default(true)
   createdAt   DateTime      @default(now())
 
   workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -248,8 +250,7 @@ model Automation {
   // Also fire on inbound DMs and Story replies (Instagram delivers a Story
   // reply as a DM) whose text matches the keywords. Independent of the post
   // scope: a campaign may be comments-only, DM-only (no post at all), or both.
-  // The DM path is always follow-gated — see processMessage in
-  // lib/queue/dm-worker.ts.
+  // The follow gate is optional and shared with comment-triggered flows.
   dmTriggerEnabled Boolean @default(false)
   dmMessage      String
   openingDmEnabled     Boolean @default(false)
@@ -275,6 +276,7 @@ model Automation {
   dmLogs           DmLog[]
   trackedLinks     TrackedLink[]
   linkClicks       LinkClick[]
+  outcomes         CampaignOutcome[]
 
   @@index([workspaceId])
   @@index([instagramAccountId])
@@ -295,6 +297,7 @@ model DmLog {
   status        DmStatus @default(PENDING)
   attempts      Int      @default(0)
   dmSentAt      DateTime?
+  messageStage  String? // OPENING, FOLLOW_PROMPT, or DELIVERY; null for legacy sends
   errorMessage  String?
 
   // The public comment reply is delivered independently of the DM, so its
@@ -375,6 +378,25 @@ model LinkClick {
   @@index([workspaceId, createdAt])
 }
 
+model CampaignOutcome {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  automationId String
+  kind         String
+  quantity     Int      @default(1)
+  valueCents   Int?
+  currency     String   @default("USD")
+  note         String?
+  occurredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, occurredAt])
+  @@index([automationId, occurredAt])
+}
+
 model WebhookEvent {
   id          String        @id @default(cuid())
   workspaceId String?
@@ -412,6 +434,7 @@ model OperationalEvent {
 enum WorkspaceRole {
   OWNER
   ADMIN
+  EDITOR
   MEMBER
 }
 

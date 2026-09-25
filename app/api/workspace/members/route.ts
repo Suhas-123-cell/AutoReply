@@ -15,12 +15,12 @@ import {
 
 const inviteSchema = z.object({
   email: z.string().email(),
-  role: z.enum(["ADMIN", "MEMBER"]).default("MEMBER"),
+  role: z.enum(["ADMIN", "EDITOR", "MEMBER"]).default("MEMBER"),
 });
 
 const updateMemberSchema = z.object({
   memberId: z.string().min(1),
-  role: z.enum(["ADMIN", "MEMBER"]),
+  role: z.enum(["ADMIN", "EDITOR", "MEMBER"]),
 });
 
 const deleteSchema = z.object({
@@ -30,7 +30,8 @@ const deleteSchema = z.object({
 
 async function getMemberPayload(
   workspaceId: string,
-  currentUserRole?: "OWNER" | "ADMIN" | "MEMBER"
+  currentUserRole?: "OWNER" | "ADMIN" | "EDITOR" | "MEMBER",
+  includeInvitations = true
 ) {
   const [members, invitations] = await Promise.all([
     prisma.workspaceMember.findMany({
@@ -39,6 +40,7 @@ async function getMemberPayload(
       select: {
         id: true,
         role: true,
+        accountAccessRestricted: true,
         createdAt: true,
         user: {
           select: {
@@ -52,7 +54,7 @@ async function getMemberPayload(
         },
       },
     }),
-    prisma.workspaceInvitation.findMany({
+    includeInvitations ? prisma.workspaceInvitation.findMany({
       where: { workspaceId, status: "PENDING" },
       orderBy: { createdAt: "desc" },
       select: {
@@ -63,7 +65,7 @@ async function getMemberPayload(
         expiresAt: true,
         createdAt: true,
       },
-    }),
+    }) : Promise.resolve([]),
   ]);
 
   return {
@@ -88,7 +90,11 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     data: {
-      ...(await getMemberPayload(context.workspaceId, context.role)),
+      ...(await getMemberPayload(
+        context.workspaceId,
+        context.role,
+        canManageWorkspace(context.role)
+      )),
     },
   });
 }
@@ -118,30 +124,7 @@ export async function POST(request: NextRequest) {
   }
 
   const email = normalizeInvitationEmail(parsed.data.email);
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-
-  if (existingUser) {
-    await prisma.workspaceMember.upsert({
-      where: {
-        workspaceId_userId: {
-          workspaceId: context.workspaceId,
-          userId: existingUser.id,
-        },
-      },
-      create: {
-        workspaceId: context.workspaceId,
-        userId: existingUser.id,
-        role: parsed.data.role,
-      },
-      update: {
-        role: parsed.data.role,
-      },
-    });
-  } else {
-    await prisma.workspaceInvitation.upsert({
+  await prisma.workspaceInvitation.upsert({
       where: {
         workspaceId_email: {
           workspaceId: context.workspaceId,
@@ -164,7 +147,6 @@ export async function POST(request: NextRequest) {
         expiresAt: getInvitationExpiry(),
       },
     });
-  }
 
   return NextResponse.json({
     success: true,
@@ -207,7 +189,7 @@ export async function PATCH(request: NextRequest) {
 
   await prisma.workspaceMember.update({
     where: { id: member.id },
-    data: { role: parsed.data.role },
+    data: { role: parsed.data.role, ...(parsed.data.role === "EDITOR" && member.role === "ADMIN" ? { accountAccessRestricted: true } : {}) },
   });
 
   return NextResponse.json({

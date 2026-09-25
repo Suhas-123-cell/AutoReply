@@ -6,22 +6,11 @@ import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { colors } from "../../src/ui/tokens";
 
-// Deep-link landing screen for autoreply://invite/:token — the only way to
-// accept a workspace invite now that /invite/[token] (the old web page) is
-// gone. The owner shares this link directly (no email sends it); see
-// lib/workspace-invitations.ts's buildInvitationUrl.
-//
-// Signed-out case (a brand-new teammate, no account yet): this screen shows
-// the invite preview and sends them to sign in, but there's no way to
-// resume the accept step automatically afterward — RootNavigator swaps
-// straight to AppTabs once isSignedIn flips true, same as every other
-// sign-in path. They need to tap the invite link again post-sign-in. A
-// "paste an invite link" manual fallback would close that gap but hasn't
-// been built.
+// Invitation context is retained through sign-in by AuthContext.
 export default function InviteAcceptScreen() {
   const { token } = useRoute().params ?? {};
   const navigation = useNavigation();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, switchWorkspace, rememberInvitation } = useAuth();
   const queryClient = useQueryClient();
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState(null);
@@ -35,6 +24,7 @@ export default function InviteAcceptScreen() {
   });
 
   const handleClose = () => {
+    rememberInvitation(null).catch(() => {});
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
@@ -46,10 +36,12 @@ export default function InviteAcceptScreen() {
     setAccepting(true);
     setAcceptError(null);
     try {
-      await apiFetch("/api/workspace/invitations/accept", {
+      const result = await apiFetch("/api/workspace/invitations/accept", {
         method: "POST",
         body: { token },
       });
+      await rememberInvitation(null);
+      await switchWorkspace(result.workspaceId);
       setAccepted(true);
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     } catch (err) {
@@ -120,10 +112,10 @@ export default function InviteAcceptScreen() {
       ) : (
         <>
           <Text className="mb-4 text-center text-sm text-muted">
-            Sign in with {data.email} to accept, then open this invite link again.
+            Sign in with {data.email}. We will bring you back to this invitation.
           </Text>
           <Pressable
-            onPress={() => navigation.reset({ index: 0, routes: [{ name: "AuthStack" }] })}
+            onPress={async () => { await rememberInvitation(token); navigation.reset({ index: 0, routes: [{ name: "AuthStack" }] }); }}
             className="rounded-lg bg-accent px-6 py-3"
           >
             <Text className="font-semibold text-background">Sign in</Text>

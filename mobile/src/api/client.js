@@ -36,12 +36,25 @@ export class ApiError extends Error {
 }
 
 let inMemoryToken = null;
+let inMemoryWorkspace = null;
+let offlineMode = false;
+let contextGeneration = 0;
 let unauthorizedHandler = null;
 let isHandlingUnauthorized = false;
 
 /** Called once at boot after reading SecureStore, and again on sign-in/sign-out. */
 export function setAuthToken(token) {
+  if (inMemoryToken !== token) contextGeneration += 1;
   inMemoryToken = token;
+}
+
+export function setWorkspaceId(workspaceId) {
+  if (inMemoryWorkspace !== workspaceId) contextGeneration += 1;
+  inMemoryWorkspace = workspaceId;
+}
+
+export function setOfflineMode(value) {
+  offlineMode = Boolean(value);
 }
 
 /** Registered by AuthContext; invoked at most once per unauthorized "episode". */
@@ -68,17 +81,26 @@ async function handleUnauthorized() {
  * @param {{method?: string, body?: object, headers?: object, timeoutMs?: number}} [options]
  */
 export async function apiFetch(path, options = {}) {
-  const { method = "GET", body, headers = {}, timeoutMs } = options;
+  const { method = "GET", body, headers = {}, timeoutMs, skipUnauthorized = false } = options;
+  if (offlineMode && !["GET", "HEAD"].includes(method.toUpperCase())) {
+    throw new ApiError(0, "Reconnect before making changes.");
+  }
+  const generation = contextGeneration;
 
   const timeout =
     timeoutMs ?? (LONG_TIMEOUT_ROUTES.includes(path) ? LONG_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
   const requestHeaders = {
     "Content-Type": "application/json",
+    "X-AutoReply-Client": "mobile",
     ...headers,
   };
   if (inMemoryToken) {
     requestHeaders.Authorization = `Bearer ${inMemoryToken}`;
+  }
+
+  if (inMemoryWorkspace && !requestHeaders["x-workspace-id"]) {
+    requestHeaders["x-workspace-id"] = inMemoryWorkspace;
   }
 
   // AbortSignal.timeout() isn't implemented by RN's fetch/Hermes polyfills
@@ -109,8 +131,11 @@ export async function apiFetch(path, options = {}) {
     // Non-JSON response (e.g. a proxy error page) — fall through with json=null.
   }
 
+  // Requests from a previous account/workspace cannot update the new UI or sign it out.
+  if (generation !== contextGeneration) throw new ApiError(0, "Workspace changed; please retry.");
+
   if (!response.ok || !json?.success) {
-    if (response.status === 401) {
+    if (response.status === 401 && !skipUnauthorized) {
       // Fire and forget — do not block the throw on sign-out completing.
       handleUnauthorized();
     }
