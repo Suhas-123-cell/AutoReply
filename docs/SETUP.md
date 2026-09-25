@@ -1,5 +1,9 @@
 # Setup & API keys
 
+For the complete production sequence, exact callback URLs, native Firebase
+files, and safe server update commands, see
+[`PRODUCTION_ENV_SETUP.md`](./PRODUCTION_ENV_SETUP.md).
+
 Companion to the inline comments in [`.env.example`](../.env.example) and
 [`mobile/.env.example`](../mobile/.env.example) — this is the "where do I
 actually get this value" reference. Run steps are in the main

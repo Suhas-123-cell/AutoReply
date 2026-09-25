@@ -1,0 +1,16 @@
+# HTTPS certificates are issued and renewed automatically for {$DOMAIN}.
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
+	log {
+		output stdout
+		format json
+	}
+	reverse_proxy api:3000
+}
