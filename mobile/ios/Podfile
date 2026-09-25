@@ -22,7 +22,7 @@ prepare_react_native_project!
 # maps to be importable from Swift when built as static libraries.
 use_modular_headers!
 
-target 'OpenReply' do
+target 'AutoReply' do
   config = use_native_modules!
 
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']

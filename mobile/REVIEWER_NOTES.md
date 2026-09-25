@@ -2,7 +2,7 @@
 
 ## What this app requires to be functional
 
-OpenReply mobile requires a **connected Instagram Business or Creator account**
+AutoReply mobile requires a **connected Instagram Business or Creator account**
 to show real data. A reviewer signing into a brand-new account will see empty
 screens. Before submitting:
 
@@ -20,7 +20,7 @@ This is not a thin wrapper around the web dashboard — it's a separate,
 Bearer-token-authenticated client with distinct native capabilities the web
 app does not have:
 
-- **Push notifications** for new leads, failed sends, and worker/token issues
+- **Push notifications** for delivered DMs, failed sends, and worker/token issues
   — nothing on the web dashboard does this today.
 - **Biometric app lock** (opt-in, Face ID / Touch ID / fingerprint) protecting
   customer PII (DM contents, comments).
