@@ -36,6 +36,20 @@ In the Meta app dashboard → **Webhooks → Instagram**, subscribe to both `com
 | `API_BASE_URL` | Your backend's URL, reachable from the device/simulator (e.g. `http://localhost:3099` for a local iOS simulator; an emulator or real device needs your LAN IP or a tunnel) |
 | `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` | Same values as the backend's, see below — must match |
 
+## Native Firebase configuration
+
+Register Android package `com.autoreply.app` and iOS bundle ID
+`com.autoreply.app` in the Firebase console. Download the actual Android
+`google-services.json` to `mobile/android/app/google-services.json` and the
+iOS `GoogleService-Info.plist` to `mobile/ios/AutoReply/GoogleService-Info.plist`.
+The checked-in `.example` files only show the expected shape; do not rename
+them into production configuration. Add the iOS plist to the AutoReply Xcode
+target's Copy Bundle Resources phase. These real config files are gitignored.
+
+For iOS push delivery, upload an APNs authentication key in Firebase Console
+under Project settings → Cloud Messaging. Test registration and a delivered
+notification on physical iOS and Android devices after configuring Firebase.
+
 ## Google OAuth clients
 
 [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services → Credentials → Create Credentials → OAuth client ID**. Three separate clients, one per platform:
