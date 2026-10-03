@@ -28,7 +28,6 @@
 		50A3C4295EC94178A47EFFC7 /* FontAwesome6_Brands.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = FontAwesome6_Brands.ttf; path = "../node_modules/react-native-vector-icons/Fonts/FontAwesome6_Brands.ttf"; sourceTree = "<group>"; };
 		52204BAB1F04473599B70B64 /* Fontisto.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = Fontisto.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Fontisto.ttf"; sourceTree = "<group>"; };
 		5A5E736E7B8B4DA5BEC6B37A /* Feather.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = Feather.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Feather.ttf"; sourceTree = "<group>"; };
-		5CC3AC39B16C3C3B8F60FA29 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-AutoReply/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		6AB58A30A93047FA9566307B /* FontAwesome6_Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = FontAwesome6_Regular.ttf; path = "../node_modules/react-native-vector-icons/Fonts/FontAwesome6_Regular.ttf"; sourceTree = "<group>"; };
 		78E6C7DA604D4472A5B8F19C /* SimpleLineIcons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = SimpleLineIcons.ttf; path = "../node_modules/react-native-vector-icons/Fonts/SimpleLineIcons.ttf"; sourceTree = "<group>"; };
 		7E2FEA34CF3357FDE3BCCCEB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = AutoReply/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -36,7 +35,6 @@
 		8CE8676D92ABD89471242FDD /* Pods-AutoReply.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AutoReply.release.xcconfig"; path = "Target Support Files/Pods-AutoReply/Pods-AutoReply.release.xcconfig"; sourceTree = "<group>"; };
 		8F9431315395498C9F9D9260 /* MaterialCommunityIcons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = MaterialCommunityIcons.ttf; path = "../node_modules/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = AutoReply/SplashScreen.storyboard; sourceTree = "<group>"; };
-		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		D2921E65C9444FDEA2235384 /* Zocial.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = Zocial.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Zocial.ttf"; sourceTree = "<group>"; };
 		DAAC138602644E26BD9D05E9 /* FontAwesome.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = FontAwesome.ttf; path = "../node_modules/react-native-vector-icons/Fonts/FontAwesome.ttf"; sourceTree = "<group>"; };
 		DECF403204F03B924DDCB8E0 /* Pods-AutoReply.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AutoReply.debug.xcconfig"; path = "Target Support Files/Pods-AutoReply/Pods-AutoReply.debug.xcconfig"; sourceTree = "<group>"; };
@@ -61,20 +59,11 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0F48F6A743CF7EC039B4D7E3 /* AutoReply */ = {
-			isa = PBXGroup;
-			children = (
-				5CC3AC39B16C3C3B8F60FA29 /* ExpoModulesProvider.swift */,
-			);
-			name = AutoReply;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* AutoReply */ = {
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* AutoReply-Bridging-Header.h */,
-				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
@@ -119,14 +108,6 @@
 			path = "";
 			sourceTree = "<group>";
 		};
-		7B5CF1D1F2E58A2EB800C389 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				0F48F6A743CF7EC039B4D7E3 /* AutoReply */,
-			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
 		7F19D8D8900D72066CDCFC86 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
@@ -152,7 +133,6 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				7F19D8D8900D72066CDCFC86 /* Pods */,
-				7B5CF1D1F2E58A2EB800C389 /* ExpoModulesProviders */,
 				6BBD7FBD017D44129DAF4E86 /* Resources */,
 			);
 			indentWidth = 2;
@@ -166,15 +146,6 @@
 				13B07F961A680F5B00A75B9A /* AutoReply.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		BB2F792B24A3F905000567C9 /* Supporting */ = {
-			isa = PBXGroup;
-			children = (
-				BB2F792C24A3F905000567C9 /* Expo.plist */,
-			);
-			name = Supporting;
-			path = AutoReply/Supporting;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -450,7 +421,6 @@
 					"-ObjC",
 					"-lc++",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.autoreply.app;
 				PRODUCT_NAME = AutoReply;
 				SWIFT_OBJC_BRIDGING_HEADER = "AutoReply/AutoReply-Bridging-Header.h";
@@ -481,7 +451,6 @@
 					"-ObjC",
 					"-lc++",
 				);
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.autoreply.app;
 				PRODUCT_NAME = AutoReply;
 				SWIFT_OBJC_BRIDGING_HEADER = "AutoReply/AutoReply-Bridging-Header.h";
