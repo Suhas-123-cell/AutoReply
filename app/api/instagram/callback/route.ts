@@ -13,10 +13,8 @@ import {
 import { canManageWorkspace } from "@/lib/workspace-access";
 import { issueInstagramSignupExchangeCode } from "@/lib/auth/instagram-signup-exchange";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
+import { legalPage } from "@/lib/legal/page";
 
-// Every possible outcome of this route, and where the *web* app sends the
-// user for it. Extracted so a unit test can assert these targets never
-// silently change (see __tests__/oauth.test.ts).
 type OutcomeStatus =
   | "denied"
   | "invalid"
@@ -26,25 +24,11 @@ type OutcomeStatus =
   | "connected"
   | "failed";
 
-export function webPathFor(status: OutcomeStatus, reason?: string): string {
-  switch (status) {
-    case "denied":
-      return "/settings?instagram=denied";
-    case "invalid":
-      return "/settings?instagram=invalid";
-    case "login":
-      return "/login";
-    case "forbidden":
-      return "/settings?instagram=forbidden";
-    case "already_connected":
-      return "/settings?instagram=already_connected";
-    case "connected":
-      return "/dashboard?connected=true";
-    case "failed":
-      return `/settings?instagram=failed&reason=${encodeURIComponent(
-        (reason ?? "").slice(0, 200)
-      )}`;
-  }
+export function webOutcomePage(status: OutcomeStatus): Response {
+  const title = status === "connected"
+    ? "Instagram connected"
+    : "Instagram connection was not completed";
+  return legalPage(title, "<p>You can close this window and return to AutoReply.</p>");
 }
 
 // The mobile app registers this custom scheme (see mobile/android/.../AndroidManifest.xml
@@ -74,12 +58,12 @@ export async function GET(request: NextRequest) {
   const finish = (
     status: OutcomeStatus,
     opts?: { reason?: string; exchangeCode?: string }
-  ) =>
-    NextResponse.redirect(
-      isMobile
-        ? mobileDeepLinkFor(status, { reason: opts?.reason, code: opts?.exchangeCode })
-        : `${baseUrl}${webPathFor(status, opts?.reason)}`
-    );
+  ) => isMobile
+    ? NextResponse.redirect(mobileDeepLinkFor(status, {
+        reason: opts?.reason,
+        code: opts?.exchangeCode,
+      }))
+    : webOutcomePage(status);
 
   if (error) {
     return finish("denied");

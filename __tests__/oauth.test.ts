@@ -6,9 +6,9 @@ import {
   verifyOAuthState,
 } from "../lib/meta/oauth";
 
-// webPathFor lives in the callback route, which also pulls in auth(), prisma,
+// webOutcomePage lives in the callback route, which also pulls in auth(), prisma,
 // and the Meta client/workspace helpers at module scope. None of those run
-// inside webPathFor itself, but importing the module still evaluates its
+// inside webOutcomePage itself, but importing the module still evaluates its
 // top-level imports, so they're stubbed out here purely to keep the import
 // side-effect-free (mirrors how agency-workspaces.test.ts mocks
 // @/lib/db/client to safely import lib/instagram-accounts).
@@ -68,22 +68,18 @@ describe("OAuth state and token encryption", () => {
   });
 });
 
-describe("webPathFor", () => {
-  it("reproduces the 7 known web redirect targets", async () => {
-    const { webPathFor } = await import(
+describe("webOutcomePage", () => {
+  it("renders a close-window page for web OAuth outcomes", async () => {
+    const { webOutcomePage } = await import(
       "../app/api/instagram/callback/route"
     );
 
-    expect(webPathFor("denied")).toBe("/settings?instagram=denied");
-    expect(webPathFor("invalid")).toBe("/settings?instagram=invalid");
-    expect(webPathFor("login")).toBe("/login");
-    expect(webPathFor("forbidden")).toBe("/settings?instagram=forbidden");
-    expect(webPathFor("already_connected")).toBe(
-      "/settings?instagram=already_connected"
-    );
-    expect(webPathFor("connected")).toBe("/dashboard?connected=true");
-    expect(webPathFor("failed", "token exchange failed")).toBe(
-      "/settings?instagram=failed&reason=token%20exchange%20failed"
-    );
+    const connected = webOutcomePage("connected");
+    expect(connected.status).toBe(200);
+    expect(connected.headers.get("content-type")).toContain("text/html");
+    expect(await connected.text()).toContain("Instagram connected");
+
+    const denied = webOutcomePage("denied");
+    expect(await denied.text()).toContain("You can close this window");
   });
 });

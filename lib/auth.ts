@@ -31,10 +31,6 @@ export const authConfig = {
       }
     },
   },
-  pages: {
-    signIn: "/login",
-    verifyRequest: "/verify-request",
-  },
   session: {
     strategy: "database",
   },
