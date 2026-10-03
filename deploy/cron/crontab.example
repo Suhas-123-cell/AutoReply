@@ -1,0 +1,5 @@
+# Times are UTC. Set API_BASE_URL and CRON_SECRET in this crontab's environment.
+CRON_TZ=UTC
+0 5 * * * /opt/autoreply/deploy/cron/autoreply-cron.sh refresh-tokens
+0 6 * * * /opt/autoreply/deploy/cron/autoreply-cron.sh attach-next-reel
+0 7 * * * /opt/autoreply/deploy/cron/autoreply-cron.sh snapshot-followers

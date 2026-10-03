@@ -54,3 +54,16 @@ Entirely opt-in — leave `STRIPE_SECRET_KEY` unset for a self-hosted deployment
 4. Webhook secret — two different values depending on where you are:
    - Local dev: `stripe listen --forward-to localhost:3099/api/webhook/stripe` prints a `whsec_...`.
    - Production: **Developers → Webhooks → Add endpoint** (`https://your-domain/api/webhook/stripe`) gives a separate, persistent `whsec_...`.
+
+## Running on a VM (EC2)
+
+The three daily routes need a scheduler outside Vercel. Install
+[`deploy/cron/crontab.example`](../deploy/cron/crontab.example) for a dedicated
+service user and set `API_BASE_URL` and `CRON_SECRET` in that user's protected
+crontab. The [wrapper](../deploy/cron/autoreply-cron.sh) sends the bearer secret
+and fails on HTTP errors. Its schedule matches `vercel.json`: token refresh at
+05:00, next-post attachment at 06:00, and follower snapshots at 07:00 UTC.
+
+The checked-in `docker-compose.prod.yml` already runs these calls in its `cron`
+container. Use one scheduler for a deployment so the same route is not called
+twice each day.
