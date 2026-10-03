@@ -6,13 +6,16 @@ AutoReply mobile requires a **connected Instagram Business or Creator account**
 to show real data. A reviewer signing into a brand-new account will see empty
 screens. Before submitting:
 
-1. Seed a demo workspace with a few realistic campaigns and DM log entries
-   across different statuses (sent, failed, skipped).
-2. Connect a real (or sandbox) Instagram professional account to that demo
-   workspace so every screen — Dashboard, Inbox, Overview, Campaigns — has
-   something to render.
-3. Provide the demo account's sign-in email in the App Store Connect /
-   Play Console review notes so the reviewer can sign in with the OTP flow.
+1. Set `DEMO_REVIEWER_EMAIL` to an inbox the reviewer can access, then run
+   `npm run db:seed-demo` against the review database. This creates paused
+   sample Instagram and Telegram campaigns and historical DM logs with sent,
+   failed, and skipped outcomes. Running it again is safe.
+2. Connect a real (or sandbox) Instagram professional account to the review
+   workspace and provide real inbox conversations. The seeded sample
+   connections have no valid credentials and cannot send messages.
+3. Provide that sign-in email and OTP access instructions in App Store Connect
+   and Play Console review notes. Use a dedicated review inbox; do not publish
+   a personal account's credentials in the repository.
 
 ## Why this qualifies as a native app (Apple Guideline 4.2)
 
@@ -53,5 +56,5 @@ shared data — the user is asked to transfer ownership first in that case.
 - **Biometric data**: never leaves the device. The app receives only a
   pass/fail result from the OS; it never has access to raw biometric data.
 
-See `app/privacy/page.tsx` (web) for the full policy, updated alongside this
+See the public `/privacy` route for the full policy, updated alongside this
 mobile release.

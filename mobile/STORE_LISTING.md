@@ -67,12 +67,12 @@ account — an empty-state screenshot reads as an unfinished app to both
 reviewers and prospective users:
 
 1. Dashboard — stat tiles + 7-day chart with real numbers
-2. Campaigns list — 3-4 campaigns with different analytics
+2. Campaigns list — seeded sample campaigns and their analytics
 3. Campaign detail — performance + tracked link
 4. Inbox — a conversation thread with a couple of exchanged messages
 5. A push notification banner (capture via a real device, can't be
    simulated in a static screenshot tool)
 
-Required sizes: iOS 6.7" and 6.5" displays (do not also claim iPad support
-for v1 — `supportsTablet: false` is already set in `app.config.js`); Android
-phone screenshots + a 1024×500 feature graphic.
+Capture iPhone and Android phone screenshots at the sizes currently required
+by App Store Connect and Play Console, plus the Play feature graphic. Confirm
+the store requirements before uploading.
