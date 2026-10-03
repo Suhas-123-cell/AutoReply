@@ -123,8 +123,7 @@ export async function GET(request: NextRequest) {
       } else {
         // True first-time sign-up: Instagram's Business Login API never
         // returns an email, so the new user has none — matches User.email's
-        // existing nullable design (see provisionUserByPhone for the same
-        // pattern with phone-only accounts).
+        // existing nullable design for accounts without an email address.
         const user = await prisma.user.create({
           data: { name: userInfo.name ?? userInfo.username },
         });

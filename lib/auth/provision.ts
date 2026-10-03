@@ -32,28 +32,6 @@ export async function provisionUserByEmail(
   return { user, workspace };
 }
 
-/** Same shape as provisionUserByEmail, keyed by phone instead. */
-export async function provisionUserByPhone(
-  phone: string
-): Promise<{ user: User; workspace: Workspace }> {
-  let user = await prisma.user.findUnique({ where: { phone } });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: { phone, phoneVerified: new Date() },
-    });
-  } else if (!user.phoneVerified) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { phoneVerified: new Date() },
-    });
-  }
-
-  const workspace = await ensureWorkspaceForUser(user.id, user.email);
-
-  return { user, workspace };
-}
-
 /**
  * Google Sign-In: find-or-link-or-create via the existing Auth.js `Account`
  * table (provider="google", providerAccountId=Google's `sub`) — reusing that

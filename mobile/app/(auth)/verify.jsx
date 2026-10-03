@@ -6,17 +6,8 @@ import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { colors } from "../../src/ui/tokens";
 
-// Shared by both code-based sign-in methods (email and phone) — `channel`
-// picks which endpoint and request body shape to use. Google and Instagram
-// sign-in never route through here; see sign-in.jsx for those.
-const CHANNEL_CONFIG = {
-  email: { endpoint: "/api/mobile/auth/verify-code", field: "email" },
-  phone: { endpoint: "/api/mobile/auth/verify-phone-code", field: "phone" },
-};
-
 export default function VerifyScreen() {
-  const { channel = "email", identifier, devCode } = useRoute().params ?? {};
-  const { endpoint, field } = CHANNEL_CONFIG[channel];
+  const { identifier, devCode } = useRoute().params ?? {};
   const [code, setCode] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -33,10 +24,10 @@ export default function VerifyScreen() {
     setLoading(true);
     try {
       const deviceName = await DeviceInfo.getDeviceName().catch(() => undefined);
-      const data = await apiFetch(endpoint, {
+      const data = await apiFetch("/api/mobile/auth/verify-code", {
         method: "POST",
         body: {
-          [field]: identifier,
+          email: identifier,
           code: trimmed,
           platform: Platform.OS,
           deviceName,
@@ -86,7 +77,7 @@ export default function VerifyScreen() {
 
       <Pressable onPress={() => navigation.goBack()} className="mt-4 items-center">
         <Text className="text-muted">
-          Use a different {channel === "phone" ? "phone number" : "email"}
+          Use a different email
         </Text>
       </Pressable>
     </View>

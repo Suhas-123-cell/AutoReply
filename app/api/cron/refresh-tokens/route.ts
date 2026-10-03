@@ -20,7 +20,6 @@ export async function pruneOldEvents(now = new Date()) {
   await Promise.all([
     prisma.webhookEvent.deleteMany({ where: { createdAt: { lt: webhookCutoff } } }),
     prisma.mobileAuthCode.deleteMany({ where: authCodeWhere }),
-    prisma.mobilePhoneAuthCode.deleteMany({ where: authCodeWhere }),
   ]);
 }
 
