@@ -8,10 +8,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY prisma ./prisma
-RUN npx prisma generate
-
 COPY . .
+RUN npx prisma generate
 
 # No HTTP port: this is a long-running BullMQ consumer, not a web server.
 CMD ["npm", "run", "worker"]

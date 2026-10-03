@@ -1,8 +1,8 @@
 .env*
-!.env.example
 .git
 .next
 node_modules
 mobile
 __tests__
 tsconfig.tsbuildinfo
+app/generated
