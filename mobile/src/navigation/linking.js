@@ -18,6 +18,7 @@ export const linking = {
       IgConnect: "ig-connect",
       BillingReturn: "billing",
       InviteAccept: "invite/:token",
+      VerifyPhone: "verify-phone",
       AppTabs: {
         screens: {
           Dashboard: "dashboard",

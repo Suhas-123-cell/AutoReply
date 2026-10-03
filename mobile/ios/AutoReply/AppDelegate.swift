@@ -3,6 +3,7 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import FirebaseCore
+import FirebaseAuth
 
 // Standard bare React Native 0.81 New Architecture AppDelegate. Replaces the
 // Expo-template version (ExpoAppDelegate / ExpoReactNativeFactory) left over
@@ -46,6 +47,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    if Auth.auth().canHandle(url) {
+      return true
+    }
     return RCTLinkingManager.application(app, open: url, options: options)
   }
 

@@ -1,7 +1,7 @@
 /**
- * Promise-based wrapper around expo-secure-store for the mobile session.
- * Stores only the session token + its expiry — no user/workspace data (that's
- * re-fetched from /api/mobile/auth/session on boot, see AuthContext.js).
+ * Secure storage for the mobile session and its cached profile.
+ * AuthContext rechecks the session online and requires an explicitly verified
+ * phone before restoring workspace data from a cached profile.
  */
 import * as SecureStore from "../lib/secure-kv";
 

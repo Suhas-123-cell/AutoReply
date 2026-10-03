@@ -4,6 +4,7 @@ import * as sessionStore from "./session-store";
 import { queryClient } from "../query/client";
 import { clearWorkspaceCache, startWorkspaceCache } from "../query/persistence";
 import { useCampaignWizardStore } from "../store/campaignWizardStore";
+import { canUseWorkspace, hasVerifiedPhone } from "./phone-gate";
 
 const AuthContext = createContext(null);
 
@@ -32,11 +33,19 @@ export function AuthProvider({ children }) {
   }, []);
 
   const applyProfile = useCallback(async (data, offline = false) => {
-    setWorkspaceId(data.workspace.id);
-    await startWorkspaceCache(`${data.user.id}:${data.workspace.id}:${data.role}`, offline);
     setProfile(data);
+    const authorized = canUseWorkspace(data);
+    setWorkspaceId(authorized ? data.workspace.id : null);
+    if (authorized) {
+      await startWorkspaceCache(`${data.user.id}:${data.workspace.id}:${data.role}`, offline);
+    } else {
+      await queryClient.cancelQueries();
+      await clearWorkspaceCache();
+      queryClient.clear();
+      useCampaignWizardStore.getState().reset();
+    }
     setIsOffline(offline);
-    setOfflineMode(offline);
+    setOfflineMode(offline && authorized);
     if (!offline) await sessionStore.setProfile(data);
   }, []);
 
@@ -63,9 +72,9 @@ export function AuthProvider({ children }) {
   }, [applyProfile]);
 
   const switchWorkspace = useCallback(async (id) => {
-    if (isSwitching || id === profile?.workspace.id) return;
+    if (!canUseWorkspace(profile) || isSwitching || id === profile?.workspace?.id) return;
     setIsSwitching(true);
-    const oldId = profile?.workspace.id;
+    const oldId = profile?.workspace?.id;
     try {
       await queryClient.cancelQueries();
       setWorkspaceId(id);
@@ -104,7 +113,7 @@ export function AuthProvider({ children }) {
         const cachedIsFresh =
           Number.isFinite(cachedAtMs) && Date.now() - cachedAtMs <= 24 * 60 * 60 * 1000;
         setAuthToken(token);
-        setWorkspaceId(cached?.workspace?.id ?? null);
+        setWorkspaceId(canUseWorkspace(cached) ? cached.workspace.id : null);
         try {
           let data;
           try {
@@ -121,8 +130,7 @@ export function AuthProvider({ children }) {
             error instanceof ApiError &&
             error.status === 0 &&
             cachedIsFresh &&
-            cached?.user &&
-            cached?.workspace
+            cached?.user
           ) {
             if (!cancelled) await applyProfile(cached, true);
           } else { throw error; }
@@ -138,8 +146,13 @@ export function AuthProvider({ children }) {
   }, [applyProfile, resetLocalState]);
 
   const value = useMemo(() => ({
-    user: profile?.user, workspace: profile?.workspace, role: profile?.role,
+    user: profile?.user,
+    workspace: canUseWorkspace(profile) ? profile.workspace : null,
+    role: canUseWorkspace(profile) ? profile.role : null,
     isLoading, isSwitching, isOffline, isSignedIn: Boolean(profile?.user),
+    isPhoneVerified: hasVerifiedPhone(profile),
+    isAuthorized: canUseWorkspace(profile),
+    phoneVerificationRequired: Boolean(profile?.user) && !hasVerifiedPhone(profile),
     signIn, signOut, switchWorkspace, refreshSession, pendingInvitation, rememberInvitation,
   }), [profile, isLoading, isSwitching, isOffline, signIn, signOut, switchWorkspace, refreshSession, pendingInvitation, rememberInvitation]);
 

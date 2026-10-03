@@ -10,7 +10,7 @@ import { colors } from "../../src/ui/tokens";
 export default function InviteAcceptScreen() {
   const { token } = useRoute().params ?? {};
   const navigation = useNavigation();
-  const { isSignedIn, switchWorkspace, rememberInvitation } = useAuth();
+  const { isSignedIn, isAuthorized, switchWorkspace, rememberInvitation } = useAuth();
   const queryClient = useQueryClient();
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState(null);
@@ -28,7 +28,7 @@ export default function InviteAcceptScreen() {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.reset({ index: 0, routes: [{ name: isSignedIn ? "AppTabs" : "AuthStack" }] });
+      navigation.reset({ index: 0, routes: [{ name: isAuthorized ? "AppTabs" : isSignedIn ? "VerifyPhone" : "AuthStack" }] });
     }
   };
 
@@ -99,7 +99,7 @@ export default function InviteAcceptScreen() {
         <Text className="mb-4 text-center text-sm text-error">{acceptError}</Text>
       ) : null}
 
-      {isSignedIn ? (
+      {isAuthorized ? (
         <Pressable
           onPress={handleAccept}
           disabled={accepting}
@@ -112,13 +112,13 @@ export default function InviteAcceptScreen() {
       ) : (
         <>
           <Text className="mb-4 text-center text-sm text-muted">
-            Sign in with {data.email}. We will bring you back to this invitation.
+            {isSignedIn ? "Verify your phone to accept this invitation." : `Sign in with ${data.email}. We will bring you back to this invitation.`}
           </Text>
           <Pressable
-            onPress={async () => { await rememberInvitation(token); navigation.reset({ index: 0, routes: [{ name: "AuthStack" }] }); }}
+            onPress={async () => { await rememberInvitation(token); navigation.reset({ index: 0, routes: [{ name: isSignedIn ? "VerifyPhone" : "AuthStack" }] }); }}
             className="rounded-lg bg-accent px-6 py-3"
           >
-            <Text className="font-semibold text-background">Sign in</Text>
+            <Text className="font-semibold text-background">{isSignedIn ? "Verify phone" : "Sign in"}</Text>
           </Pressable>
         </>
       )}
