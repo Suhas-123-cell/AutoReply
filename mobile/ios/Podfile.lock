@@ -6,11 +6,25 @@ PODS:
   - AppAuth/ExternalUserAgent (1.7.6):
     - AppAuth/Core
   - FBLazyVector (0.81.5)
+  - Firebase/Auth (11.15.0):
+    - Firebase/CoreOnly
+    - FirebaseAuth (~> 11.15.0)
   - Firebase/CoreOnly (11.15.0):
     - FirebaseCore (~> 11.15.0)
   - Firebase/Messaging (11.15.0):
     - Firebase/CoreOnly
     - FirebaseMessaging (~> 11.15.0)
+  - FirebaseAppCheckInterop (11.15.0)
+  - FirebaseAuth (11.15.0):
+    - FirebaseAppCheckInterop (~> 11.0)
+    - FirebaseAuthInterop (~> 11.0)
+    - FirebaseCore (~> 11.15.0)
+    - FirebaseCoreExtension (~> 11.15.0)
+    - GoogleUtilities/AppDelegateSwizzler (~> 8.1)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GTMSessionFetcher/Core (< 5.0, >= 3.4)
+    - RecaptchaInterop (~> 101.0)
+  - FirebaseAuthInterop (11.15.0)
   - FirebaseCore (11.15.0):
     - FirebaseCoreInternal (~> 11.15.0)
     - GoogleUtilities/Environment (~> 8.1)
@@ -1801,6 +1815,9 @@ PODS:
     - React-utils (= 0.81.5)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.81.5)
+  - RecaptchaInterop (101.0.0)
+  - RNAppleAuthentication (2.5.1):
+    - React-Core
   - RNBootSplash (6.3.12):
     - hermes-engine
     - RCTRequired
@@ -1850,6 +1867,10 @@ PODS:
   - RNFBApp (22.4.0):
     - Firebase/CoreOnly (= 11.15.0)
     - React-Core
+  - RNFBAuth (22.4.0):
+    - Firebase/Auth (= 11.15.0)
+    - React-Core
+    - RNFBApp
   - RNFBMessaging (22.4.0):
     - Firebase/Messaging (= 11.15.0)
     - FirebaseCoreExtension
@@ -2283,10 +2304,12 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
+  - "RNAppleAuthentication (from `../node_modules/@invertase/react-native-apple-authentication`)"
   - RNBootSplash (from `../node_modules/react-native-bootsplash`)
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - RNDeviceInfo (from `../node_modules/react-native-device-info`)
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
+  - "RNFBAuth (from `../node_modules/@react-native-firebase/auth`)"
   - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
@@ -2305,6 +2328,9 @@ SPEC REPOS:
   trunk:
     - AppAuth
     - Firebase
+    - FirebaseAppCheckInterop
+    - FirebaseAuth
+    - FirebaseAuthInterop
     - FirebaseCore
     - FirebaseCoreExtension
     - FirebaseCoreInternal
@@ -2317,6 +2343,7 @@ SPEC REPOS:
     - GTMSessionFetcher
     - nanopb
     - PromisesObjC
+    - RecaptchaInterop
 
 EXTERNAL SOURCES:
   FBLazyVector:
@@ -2458,6 +2485,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
+  RNAppleAuthentication:
+    :path: "../node_modules/@invertase/react-native-apple-authentication"
   RNBootSplash:
     :path: "../node_modules/react-native-bootsplash"
   RNCAsyncStorage:
@@ -2466,6 +2495,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-device-info"
   RNFBApp:
     :path: "../node_modules/@react-native-firebase/app"
+  RNFBAuth:
+    :path: "../node_modules/@react-native-firebase/auth"
   RNFBMessaging:
     :path: "../node_modules/@react-native-firebase/messaging"
   RNGestureHandler:
@@ -2497,6 +2528,9 @@ SPEC CHECKSUMS:
   AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
   Firebase: d99ac19b909cd2c548339c2241ecd0d1599ab02e
+  FirebaseAppCheckInterop: 06fe5a3799278ae4667e6c432edd86b1030fa3df
+  FirebaseAuth: a6575e5fbf46b046c58dc211a28a5fbdd8d4c83b
+  FirebaseAuthInterop: 7087d7a4ee4bc4de019b2d0c240974ed5d89e2fd
   FirebaseCore: efb3893e5b94f32b86e331e3bd6dadf18b66568e
   FirebaseCoreExtension: edbd30474b5ccf04e5f001470bdf6ea616af2435
   FirebaseCoreInternal: 9afa45b1159304c963da48addb78275ef701c6b4
@@ -2577,10 +2611,13 @@ SPEC CHECKSUMS:
   ReactCodegen: 7d4593f7591f002d137fe40cef3f6c11f13c88cc
   ReactCommon: 08810150b1206cc44aecf5f6ae19af32f29151a8
   ReactNativeDependencies: 71ce9c28beb282aa720ea7b46980fff9669f428a
+  RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
+  RNAppleAuthentication: a89c9804592b38ed4ab11f0aee68d05ba12ad432
   RNBootSplash: 13b7612788960d0c5446e68489ac2509e506cfcd
   RNCAsyncStorage: 3a4f5e2777dae1688b781a487923a08569e27fe4
   RNDeviceInfo: ae26ae45db3f9937f038a284bcd0a1db8d70db96
   RNFBApp: 12884d3bf9b3a0223efe4a0adce516edf72c4102
+  RNFBAuth: f8327aab9b7edf5f15a3b1b9089f6a8d56faf992
   RNFBMessaging: e954bfb053a5c6bb10b26bae4bbc58a4edd41131
   RNGestureHandler: 2914750df066d89bf9d8f48a10ad5f0051108ac3
   RNGoogleSignin: e74b0a6f2b771511344822d2c74a3d5f60411e03
@@ -2595,6 +2632,6 @@ SPEC CHECKSUMS:
   RNWorklets: 76fce72926e28e304afb44f0da23b2d24f2c1fa0
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
 
-PODFILE CHECKSUM: c0027dc1b1e82c4c45cc202affb68fde35c472d5
+PODFILE CHECKSUM: 48d2ddc8b032e8b8d996ff42a0a3e9c605ca3dee
 
 COCOAPODS: 1.16.2

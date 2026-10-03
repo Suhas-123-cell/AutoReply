@@ -26,7 +26,7 @@ const STATUS_COPY = {
 export default function IgConnectScreen() {
   const { status, reason, code } = useRoute().params ?? {};
   const navigation = useNavigation();
-  const { isSignedIn, signIn } = useAuth();
+  const { isSignedIn, isAuthorized, signIn } = useAuth();
   const [exchanging, setExchanging] = useState(Boolean(code));
   const [exchangeError, setExchangeError] = useState(null);
 
@@ -48,8 +48,7 @@ export default function IgConnectScreen() {
         });
         if (cancelled) return;
         await signIn(data);
-        // No manual navigation — RootNavigator swaps to AppTabs once
-        // isSignedIn flips true, same as email/phone verify.
+        // RootNavigator opens phone verification until this account is verified.
       } catch (err) {
         if (cancelled) return;
         setExchangeError(
@@ -77,7 +76,7 @@ export default function IgConnectScreen() {
       // No back stack (e.g. this deep link was the very first screen to
       // mount) — land on whichever root entry point matches auth state,
       // same as the old router.replace("/(app)/dashboard") fallback.
-      navigation.reset({ index: 0, routes: [{ name: isSignedIn ? "AppTabs" : "AuthStack" }] });
+      navigation.reset({ index: 0, routes: [{ name: isAuthorized ? "AppTabs" : isSignedIn ? "VerifyPhone" : "AuthStack" }] });
     }
   };
 

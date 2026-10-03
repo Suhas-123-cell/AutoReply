@@ -36,7 +36,7 @@ import "../global.css";
 const LOCK_AFTER_BACKGROUND_MS = 5 * 60 * 1000;
 
 function RootNavigation() {
-  const { isLoading, isSignedIn, pendingInvitation, signOut } = useAuth();
+  const { isLoading, isSignedIn, isAuthorized, pendingInvitation, signOut } = useAuth();
 
   const [showLock, setShowLock] = useState(false);
   const [showPushPrimer, setShowPushPrimer] = useState(false);
@@ -70,7 +70,7 @@ function RootNavigation() {
   // boot that rehydrates an existing session — hasSeenPushPrimer() is what
   // actually gates it to "once", not the sign-in transition itself).
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isAuthorized) { setShowPushPrimer(false); return; }
     let cancelled = false;
     (async () => {
       const seen = await hasSeenPushPrimer();
@@ -79,7 +79,12 @@ function RootNavigation() {
     return () => {
       cancelled = true;
     };
-  }, [isSignedIn]);
+  }, [isAuthorized]);
+
+  useEffect(() => {
+    if (!isAuthorized || !pendingInvitation || !navigationRef.isReady()) return;
+    navigationRef.navigate("InviteAccept", { token: pendingInvitation });
+  }, [isAuthorized, pendingInvitation]);
 
   // Opt-in biometric app lock: re-lock only after a long-enough background.
   useEffect(() => {
@@ -122,7 +127,7 @@ function RootNavigation() {
         ref={navigationRef}
         linking={linking}
         onReady={() => {
-          if (isSignedIn && pendingInvitation) {
+          if (isAuthorized && pendingInvitation) {
             navigationRef.navigate("InviteAccept", { token: pendingInvitation });
           }
         }}

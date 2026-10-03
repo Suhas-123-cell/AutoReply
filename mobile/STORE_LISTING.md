@@ -49,6 +49,7 @@ Business / Productivity (primary), Social Networking (secondary)
 | Data type                        | Linked to identity | Purpose                             |
 | -------------------------------- | ------------------ | ----------------------------------- |
 | Email address                    | Yes                | App Functionality (sign-in)         |
+| Phone number                     | Yes                | App Functionality (verification)    |
 | User content (comments, DM text) | Yes                | App Functionality only              |
 | Identifiers (push token)         | Yes                | App Functionality (notifications)   |
 | Diagnostics                      | No                 | App Functionality (troubleshooting) |
@@ -56,8 +57,8 @@ Business / Productivity (primary), Social Networking (secondary)
 **Tracking**: No — this app does not track users across other companies' apps
 or websites.
 
-**Play Data Safety** (equivalent breakdown): Personal info (email) collected,
-not shared with third parties, encrypted in transit, users can request
+**Play Data Safety** (equivalent breakdown): Personal info (email and phone)
+collected, phone verification processed by Firebase, encrypted in transit, users can request
 deletion in-app (Settings → Account → Delete Account).
 
 ## Screenshots needed

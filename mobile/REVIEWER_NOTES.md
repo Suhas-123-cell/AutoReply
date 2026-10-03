@@ -13,7 +13,9 @@ screens. Before submitting:
 2. Connect a real (or sandbox) Instagram professional account to the review
    workspace and provide real inbox conversations. The seeded sample
    connections have no valid credentials and cannot send messages.
-3. Provide that sign-in email and OTP access instructions in App Store Connect
+3. Complete Firebase phone verification with a dedicated review phone number.
+   The sample seed does not bypass this requirement. Provide the sign-in email
+   and access to email and SMS codes in App Store Connect
    and Play Console review notes. Use a dedicated review inbox; do not publish
    a personal account's credentials in the repository.
 
@@ -46,6 +48,8 @@ shared data — the user is asked to transfer ownership first in that case.
 ## Data safety / privacy label summary
 
 - **Email address** — linked to identity, used for sign-in (App Functionality).
+- **Phone number** — linked to identity, required for account verification;
+  processed by Firebase Authentication to deliver and verify SMS codes.
 - **User content** — displayed Instagram comments and DM text (App
   Functionality only, not shared or sold).
 - **Identifiers** — device push token (App Functionality: delivering

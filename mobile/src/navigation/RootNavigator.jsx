@@ -6,6 +6,7 @@ import AuthStack from "./AuthStack";
 import IgConnectScreen from "../../app/ig-connect";
 import InviteAcceptScreen from "../../app/invite/[token]";
 import BillingReturnScreen from "../../app/billing";
+import VerifyPhoneScreen from "../../app/(auth)/verify-phone";
 
 const Stack = createNativeStackNavigator();
 
@@ -13,7 +14,7 @@ const Stack = createNativeStackNavigator();
  * Conditionally rendering the "AppTabs" vs "AuthStack" screen (rather than
  * mounting one navigator and firing a redirect effect once auth state
  * resolves) is React Navigation's documented auth-flow pattern: the
- * navigator's mounted route reacts to isSignedIn directly, so there is no
+ * navigator's mounted route reacts to phone authorization directly, so there is no
  * frame where a stale route briefly renders before a redirect fires. That
  * also fixes a pre-existing bug from the expo-router version, where a
  * signed-out user could briefly flash the ig-connect screen before the old
@@ -25,7 +26,8 @@ const Stack = createNativeStackNavigator();
  * stay reachable regardless of sign-in state.
  */
 export default function RootNavigator() {
-  const { isSignedIn, isSwitching, isOffline, workspace, refreshSession } = useAuth();
+  const { isSignedIn, isAuthorized, isSwitching, isOffline, workspace, refreshSession } = useAuth();
+  const navigationKey = isAuthorized ? `workspace:${workspace.id}` : isSignedIn ? "phone-required" : "signed-out";
   if (isSwitching) return <View className="flex-1 items-center justify-center bg-background"><ActivityIndicator /></View>;
 
   return (
@@ -33,16 +35,19 @@ export default function RootNavigator() {
     {isOffline ? (
       <Pressable onPress={() => refreshSession().catch(() => {})} className="bg-surface px-4 py-2">
         <Text className="text-center text-warning">
-          Offline — showing saved totals. Tap to reconnect.
+          {isAuthorized ? "Offline — showing saved totals. Tap to reconnect." : "Offline — tap to reconnect before verifying your phone."}
         </Text>
       </Pressable>
     ) : null}
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isSignedIn ? (
+      {isAuthorized ? (
         <Stack.Screen name="AppTabs" navigationKey={workspace?.id} component={AppTabs} />
+      ) : isSignedIn ? (
+        <Stack.Screen name="VerifyPhone" component={VerifyPhoneScreen} />
       ) : (
         <Stack.Screen name="AuthStack" component={AuthStack} />
       )}
+      <Stack.Group navigationKey={navigationKey}>
       <Stack.Screen name="IgConnect" component={IgConnectScreen} options={{ presentation: "modal" }} />
       <Stack.Screen name="BillingReturn" component={BillingReturnScreen} />
       <Stack.Screen
@@ -50,6 +55,7 @@ export default function RootNavigator() {
         component={InviteAcceptScreen}
         options={{ presentation: "modal" }}
       />
+      </Stack.Group>
     </Stack.Navigator>
     </View>
   );
