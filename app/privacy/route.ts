@@ -11,6 +11,7 @@ export function GET() {
 <h2>Data we store about account owners</h2>
 <ul>
 <li>Your sign-in identity (email address, phone number, or Google account ID) and workspace membership.</li>
+<li>Your verified phone number, required before using the app. Firebase Authentication sends the SMS code. Google receives and stores the number for authentication and spam and abuse prevention.</li>
 <li>Instagram access tokens and Telegram bot tokens, encrypted at rest with AES-256-GCM, used only to call the official Instagram API and Telegram Bot API on your behalf.</li>
 <li>The campaigns you create: keywords, messages, links, and the posts they attach to.</li>
 <li>A push-notification device token if you enable notifications in the app.</li>
@@ -26,7 +27,7 @@ export function GET() {
 <h2>What we do not do</h2>
 <ul>
 <li>We never scrape Instagram, automate a browser, or ask for an Instagram password. All access goes through Meta's official Instagram API with permissions you grant on Meta's consent screen.</li>
-<li>We do not sell or share personal data with third parties. Data leaves this service only to Meta, Telegram, and the infrastructure providers hosting it.</li>
+<li>We do not sell personal data. We use Meta, Telegram, Resend, and Firebase and hosting providers to deliver the service. Firebase processes your phone number for SMS verification.</li>
 <li>We only act on comments on the connected account's own posts, and on messages sent directly to the connected account.</li>
 </ul>
 

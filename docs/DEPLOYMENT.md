@@ -45,7 +45,9 @@ must be connected separately to demonstrate inbox and live delivery.
 
 - Download real `google-services.json` and `GoogleService-Info.plist` from
   Firebase, add the plist to the iOS target, and upload the APNs key to
-  Firebase. Check push on physical devices.
+  Firebase. Enable the Phone Auth provider, billing and permitted SMS regions,
+  configure iOS's `FIREBASE_RECAPTCHA_URL_SCHEME`, and register Android signing
+  fingerprints. Check phone verification and push on physical devices.
 - Generate and protect the Android upload keystore, configure the four
   `MYAPP_UPLOAD_*` signing values, and register release SHA-1 fingerprints
   for Google sign-in.

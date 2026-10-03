@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserId } from "@/lib/auth";
+import { getAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // silently destroy every other member's campaigns and logs the moment an
 // OWNER deletes their own account. Block that case rather than allow it.
 export async function DELETE() {
-  const userId = await getCurrentUserId();
+  const userId = await getAuthenticatedUserId();
   if (!userId) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },

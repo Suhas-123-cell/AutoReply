@@ -51,6 +51,47 @@ For iOS push delivery, upload an APNs authentication key in Firebase Console
 under Project settings → Cloud Messaging. Test registration and a delivered
 notification on physical iOS and Android devices after configuring Firebase.
 
+## Required phone verification
+
+Every account must verify a phone number before it can access workspaces,
+campaigns, integrations, or notifications. Email, Google, Apple, and Instagram
+sign-ins create a pending account until this step is complete. Each verified
+number belongs to one AutoReply account; using another email cannot claim the
+same number. Later sign-ins to that account do not request another SMS.
+
+Firebase Authentication delivers and validates the SMS code. Enable the
+**Phone** provider in Firebase Console → Authentication → Sign-in method,
+configure billing and permitted SMS regions for your users, and keep the
+backend service account and both native configuration files in the same
+Firebase project. Resend continues to deliver email codes.
+
+For Android, register the debug, upload, and Play App Signing SHA-1 and SHA-256
+fingerprints in Firebase and download the updated `google-services.json`.
+Firebase uses Play Integrity with a reCAPTCHA fallback to verify the app.
+
+For iOS, enable Push Notifications and Background Modes (background fetch
+and remote notifications), upload the APNs key, and set the AutoReply target's
+`FIREBASE_RECAPTCHA_URL_SCHEME` build setting in **both Debug and Release** to
+the **Encoded App ID** shown in Firebase Console → Project settings → your
+iOS app. Its checked-in value is an explicit placeholder. The Info.plist URL
+type and AppDelegate already route Firebase's reCAPTCHA callback. Confirm the
+Firebase API key allows the project's `firebaseapp.com` auth domain.
+
+Run `cd mobile/ios && pod install` after installing dependencies. Test SMS on
+physical Android and iOS devices, including the iOS reCAPTCHA fallback with
+Background App Refresh disabled. Test that a new email is blocked until its
+phone is verified, and that an existing phone cannot verify a second account.
+Existing accounts must complete verification on their next app launch. Run
+`npm run db:migrate` when deploying: the migration clears unproven phone
+numbers and verification marks from the previous flow, which had no SMS
+provider. Users must enter their number and verify it with Firebase.
+
+Firebase's [phone auth setup](https://rnfirebase.io/auth/phone-auth) and
+[Apple platform configuration](https://firebase.google.com/docs/auth/ios/phone-auth)
+describe the provider settings. Firebase fictional test numbers are for a
+separate development project; never configure them in the production project
+or set `FIREBASE_AUTH_EMULATOR_HOST` on the production backend.
+
 ## Android signing
 
 For local debug builds, generate the gitignored keystore if it is absent:

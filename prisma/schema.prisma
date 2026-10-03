@@ -14,8 +14,8 @@ model User {
   name          String?
   email         String?   @unique
   emailVerified DateTime?
-  // E.164 format (e.g. +14155551234). Nullable + unique, same pattern as
-  // email: a user may sign up via Google or Instagram and never set a phone.
+  // E.164 format (e.g. +14155551234). Sign-in creates a pending account;
+  // app access requires phoneVerified, and each number belongs to one user.
   phone         String?   @unique
   phoneVerified DateTime?
   image         String?
