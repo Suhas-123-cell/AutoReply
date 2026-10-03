@@ -7,6 +7,23 @@ import { enqueuePush } from "@/lib/push/notify";
 
 const DAYS_BEFORE_EXPIRY = 10;
 
+export async function pruneOldEvents(now = new Date()) {
+  const webhookCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const authCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const authCodeWhere = {
+    OR: [
+      { consumedAt: { lt: authCutoff } },
+      { expiresAt: { lt: authCutoff } },
+    ],
+  };
+
+  await Promise.all([
+    prisma.webhookEvent.deleteMany({ where: { createdAt: { lt: webhookCutoff } } }),
+    prisma.mobileAuthCode.deleteMany({ where: authCodeWhere }),
+    prisma.mobilePhoneAuthCode.deleteMany({ where: authCodeWhere }),
+  ]);
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json(
@@ -14,6 +31,8 @@ export async function GET(request: NextRequest) {
       { status: 401 }
     );
   }
+
+  await pruneOldEvents();
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() + DAYS_BEFORE_EXPIRY);
