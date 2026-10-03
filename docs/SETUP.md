@@ -50,6 +50,39 @@ For iOS push delivery, upload an APNs authentication key in Firebase Console
 under Project settings → Cloud Messaging. Test registration and a delivered
 notification on physical iOS and Android devices after configuring Firebase.
 
+## Android signing
+
+For local debug builds, generate the gitignored keystore if it is absent:
+
+```sh
+keytool -genkeypair -v -storetype JKS -keystore mobile/android/app/debug.keystore \
+  -alias androiddebugkey -storepass android -keypass android \
+  -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+```
+
+For store releases, generate a separate upload key and keep it outside the
+repository:
+
+```sh
+keytool -genkeypair -v -storetype PKCS12 -keystore ~/.android/autoreply-upload.keystore \
+  -alias autoreply-upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Put these values in your private `~/.gradle/gradle.properties` (or set them as
+environment variables):
+
+```properties
+MYAPP_UPLOAD_STORE_FILE=/absolute/path/to/autoreply-upload.keystore
+MYAPP_UPLOAD_STORE_PASSWORD=REPLACE_WITH_STORE_PASSWORD
+MYAPP_UPLOAD_KEY_ALIAS=autoreply-upload
+MYAPP_UPLOAD_KEY_PASSWORD=REPLACE_WITH_KEY_PASSWORD
+```
+
+Release builds use this key only when all four values are present; they never
+fall back to the debug key. Register the upload certificate's SHA-1 as a new
+Google Android OAuth client for `com.autoreply.app`. Also register the Google
+Play App Signing certificate SHA-1 from Play Console after enrollment.
+
 ## Google OAuth clients
 
 [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services → Credentials → Create Credentials → OAuth client ID**. Three separate clients, one per platform:
