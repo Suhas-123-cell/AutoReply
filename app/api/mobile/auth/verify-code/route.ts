@@ -5,6 +5,7 @@ import { normalizeEmail, verifyMobileAuthCode } from "@/lib/auth/mobile-codes";
 import { provisionUserByEmail } from "@/lib/auth/provision";
 import { createMobileSession } from "@/lib/auth/mobile-session";
 import { getWorkspaceMembership } from "@/lib/workspace";
+import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verification";
 
 export const dynamic = "force-dynamic";
 
@@ -63,9 +64,10 @@ export async function POST(request: NextRequest) {
     data: {
       sessionToken,
       expiresAt: expires.toISOString(),
-      user: { id: user.id, email: user.email },
-      workspace: { id: workspace.id, name: workspace.name },
-      role: membership?.role ?? "OWNER",
+      user: mobileUserProfile(user),
+      workspace: hasVerifiedPhone(user) ? { id: workspace.id, name: workspace.name } : null,
+      role: hasVerifiedPhone(user) ? membership?.role ?? "OWNER" : null,
+      phoneVerificationRequired: !hasVerifiedPhone(user),
     },
   });
 }

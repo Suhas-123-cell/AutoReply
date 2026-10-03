@@ -5,6 +5,7 @@ import { createMobileSession } from "@/lib/auth/mobile-session";
 import { IG_SIGNUP_EXCHANGE_PREFIX } from "@/lib/auth/instagram-signup-exchange";
 import { getWorkspaceMembership } from "@/lib/workspace";
 import { prisma } from "@/lib/db/client";
+import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verification";
 
 export const dynamic = "force-dynamic";
 
@@ -63,9 +64,10 @@ export async function POST(request: NextRequest) {
     data: {
       sessionToken,
       expiresAt: expires.toISOString(),
-      user: { id: user.id, email: user.email, name: user.name },
-      workspace: { id: membership.workspace.id, name: membership.workspace.name },
-      role: membership.role,
+      user: mobileUserProfile(user),
+      workspace: hasVerifiedPhone(user) ? { id: membership.workspace.id, name: membership.workspace.name } : null,
+      role: hasVerifiedPhone(user) ? membership.role : null,
+      phoneVerificationRequired: !hasVerifiedPhone(user),
     },
   });
 }

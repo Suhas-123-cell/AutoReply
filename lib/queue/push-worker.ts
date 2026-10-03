@@ -46,6 +46,7 @@ async function resolveTargetDevices(
   return prisma.pushDevice.findMany({
     where: {
       userId: { in: members.map((m) => m.userId) },
+      user: { phone: { not: null }, phoneVerified: { not: null } },
       disabledAt: null,
       ...(preferenceField ? { [preferenceField]: true } : {}),
     },

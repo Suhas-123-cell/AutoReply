@@ -6,6 +6,7 @@ import { createMobileSession } from "@/lib/auth/mobile-session";
 import { allowAuthAttemptByIp } from "@/lib/auth/otp-rate-limit";
 import { getWorkspaceMembership } from "@/lib/workspace";
 import { getClientIp } from "@/lib/http/client-ip";
+import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verification";
 
 export const dynamic = "force-dynamic";
 
@@ -72,9 +73,10 @@ export async function POST(request: NextRequest) {
     data: {
       sessionToken,
       expiresAt: expires.toISOString(),
-      user: { id: user.id, email: user.email, name: user.name },
-      workspace: { id: workspace.id, name: workspace.name },
-      role: membership?.role ?? "OWNER",
+      user: mobileUserProfile(user),
+      workspace: hasVerifiedPhone(user) ? { id: workspace.id, name: workspace.name } : null,
+      role: hasVerifiedPhone(user) ? membership?.role ?? "OWNER" : null,
+      phoneVerificationRequired: !hasVerifiedPhone(user),
     },
   });
 }

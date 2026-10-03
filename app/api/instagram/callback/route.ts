@@ -14,6 +14,7 @@ import { canManageWorkspace } from "@/lib/workspace-access";
 import { issueInstagramSignupExchangeCode } from "@/lib/auth/instagram-signup-exchange";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
 import { legalPage } from "@/lib/legal/page";
+import { hasVerifiedPhone } from "@/lib/auth/phone-verification";
 
 type OutcomeStatus =
   | "denied"
@@ -172,6 +173,14 @@ export async function GET(request: NextRequest) {
 
   if (!actingUserId) {
     return finish(isMobile ? "invalid" : "login");
+  }
+
+  const actingUser = await prisma.user.findUnique({
+    where: { id: actingUserId },
+    select: { phone: true, phoneVerified: true },
+  });
+  if (!hasVerifiedPhone(actingUser)) {
+    return finish("forbidden", { reason: "Verify your phone before connecting Instagram." });
   }
 
   const membership = await prisma.workspaceMember.findFirst({

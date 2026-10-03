@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getMessaging as getAdminMessaging, type Messaging } from "firebase-admin/messaging";
+import { getAuth as getAdminAuth, type Auth } from "firebase-admin/auth";
 import { getFirebaseServiceAccount } from "@/lib/env";
 
 const globalForFirebase = globalThis as unknown as {
@@ -18,4 +19,8 @@ function getFirebaseApp(): App {
 
 export function getMessaging(): Messaging {
   return getAdminMessaging(getFirebaseApp());
+}
+
+export function getFirebaseAuth(): Auth {
+  return getAdminAuth(getFirebaseApp());
 }

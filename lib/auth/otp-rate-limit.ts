@@ -59,6 +59,10 @@ export async function allowCodeVerifyAttempt(email: string): Promise<boolean> {
   return checkAndIncrement(`otp:verify:e:${hashKeyPart(email)}`, 10, 900);
 }
 
+export async function allowPhoneVerifyAttempt(userId: string): Promise<boolean> {
+  return checkAndIncrement(`auth:phone:verify:u:${hashKeyPart(userId)}`, 10, 900);
+}
+
 // Generic per-IP limiter for auth endpoints that have no natural per-identifier
 // key to rate limit on up front (Google/Instagram sign-in don't have a
 // phone/email to throttle against before the expensive verification step

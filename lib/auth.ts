@@ -5,6 +5,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser, getPrimaryWorkspace } from "@/lib/workspace";
 import { getBearerSessionUserId } from "@/lib/auth/bearer";
+import { hasVerifiedPhone } from "@/lib/auth/phone-verification";
 
 type AdapterPrismaClient = Parameters<typeof PrismaAdapter>[0];
 
@@ -40,7 +41,9 @@ export const authConfig = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
-export async function getCurrentUserId(): Promise<string | null> {
+// Raw identity is available only to onboarding, session bootstrap, and account
+// deletion. Workspace routes use getCurrentUserId() below.
+export async function getAuthenticatedUserId(): Promise<string | null> {
   // Mobile clients authenticate with a Bearer session token instead of a
   // cookie (see lib/auth/bearer.ts). A web request never sends this header,
   // so getBearerSessionUserId() returns null immediately with zero I/O and
@@ -51,6 +54,16 @@ export async function getCurrentUserId(): Promise<string | null> {
 
   const session = await auth();
   return session?.user?.id ?? null;
+}
+
+export async function getCurrentUserId(): Promise<string | null> {
+  const userId = await getAuthenticatedUserId();
+  if (!userId) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { phone: true, phoneVerified: true },
+  });
+  return hasVerifiedPhone(user) ? userId : null;
 }
 
 export async function getCurrentWorkspaceId(): Promise<string | null> {

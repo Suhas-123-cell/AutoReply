@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserId } from "@/lib/auth";
+import { getAuthenticatedUserId } from "@/lib/auth";
 import { getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { prisma } from "@/lib/db/client";
+import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verification";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +12,31 @@ export const dynamic = "force-dynamic";
 // other endpoint surfaces, since the web UI never needs to hide controls by
 // role client-side; it re-checks server-side on every mutation instead).
 export async function GET() {
-  const userId = await getCurrentUserId();
+  const userId = await getAuthenticatedUserId();
   if (!userId) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 }
     );
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, phone: true, phoneVerified: true },
+  });
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasVerifiedPhone(user)) {
+    return NextResponse.json({
+      success: true,
+      data: {
+        user: mobileUserProfile(user),
+        workspace: null,
+        role: null,
+        phoneVerificationRequired: true,
+      },
+    });
   }
 
   const context = await getCurrentWorkspaceContext();
@@ -27,20 +47,15 @@ export async function GET() {
     );
   }
 
-  const [user, connectedAccountCount] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, name: true },
-    }),
-    prisma.instagramAccount.count({
-      where: { workspaceId: context.workspaceId },
-    }),
-  ]);
+  const connectedAccountCount = await prisma.instagramAccount.count({
+    where: { workspaceId: context.workspaceId },
+  });
 
   return NextResponse.json({
     success: true,
     data: {
-      user,
+      user: mobileUserProfile(user),
+      phoneVerificationRequired: false,
       workspace: { id: context.workspace.id, name: context.workspace.name },
       role: context.role,
       connectedAccountCount,
