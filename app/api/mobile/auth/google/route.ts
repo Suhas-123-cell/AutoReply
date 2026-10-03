@@ -5,6 +5,7 @@ import { provisionUserByGoogleAccount } from "@/lib/auth/provision";
 import { createMobileSession } from "@/lib/auth/mobile-session";
 import { allowAuthAttemptByIp } from "@/lib/auth/otp-rate-limit";
 import { getWorkspaceMembership } from "@/lib/workspace";
+import { getClientIp } from "@/lib/http/client-ip";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,6 @@ const googleSignInSchema = z.object({
   deviceName: z.string().max(120).optional(),
   appVersion: z.string().max(40).optional(),
 });
-
-function getClientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : null;
-}
 
 export async function POST(request: NextRequest) {
   if (!isGoogleSignInConfigured()) {
@@ -32,7 +28,7 @@ export async function POST(request: NextRequest) {
   // Google's public-key fetch/cache) — without this, an attacker could
   // submit unlimited garbage tokens for free. There's no phone/email to key
   // a per-identifier limit on up front, so this is IP-only.
-  const allowed = await allowAuthAttemptByIp("google", getClientIp(request), 20, 3600);
+  const allowed = await allowAuthAttemptByIp("google", getClientIp(request.headers), 20, 3600);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "Too many attempts. Try again later." },

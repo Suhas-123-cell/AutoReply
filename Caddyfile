@@ -12,5 +12,9 @@
 		output stdout
 		format json
 	}
-	reverse_proxy api:3000
+	reverse_proxy api:3000 {
+		header_up CF-Connecting-IP {remote_host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+	}
 }
