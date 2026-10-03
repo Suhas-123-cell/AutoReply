@@ -13,6 +13,7 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
 import InAppBrowser from "react-native-inappbrowser-reborn";
 import DeviceInfo from "react-native-device-info";
+import { appleAuth, AppleButton } from "@invertase/react-native-apple-authentication";
 import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { signInWithGoogle } from "../../src/auth/google-signin";
@@ -63,7 +64,7 @@ function InstagramGlyph() {
   );
 }
 
-// Three sign-in/sign-up methods (Google, Instagram, email code) — see
+// Sign-in methods (Apple on iOS, Google, Instagram, email code) — see
 // AuthStack.jsx / verify.jsx for how each resolves to the same
 // createMobileSession() session shape server-side regardless of which one
 // a person used. Email is one sign-in-or-sign-up flow: a code to a new
@@ -71,7 +72,7 @@ function InstagramGlyph() {
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [showEmailInput, setShowEmailInput] = useState(false);
-  const [busy, setBusy] = useState(null); // "google" | "instagram" | "email" | null
+  const [busy, setBusy] = useState(null); // "apple" | "google" | "instagram" | "email" | null
   const [error, setError] = useState(null);
   const navigation = useNavigation();
   const { signIn } = useAuth();
@@ -97,6 +98,32 @@ export default function SignInScreen() {
       await signIn(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Google sign-in failed. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleApple() {
+    if (busy !== null) return;
+    setError(null);
+    setBusy("apple");
+    try {
+      const credential = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+      });
+      if (!credential.identityToken) throw new Error("Missing Apple identity token");
+      const name = [credential.fullName?.givenName, credential.fullName?.familyName]
+        .filter(Boolean).join(" ").trim() || null;
+      const data = await apiFetch("/api/mobile/auth/apple", {
+        method: "POST",
+        body: { idToken: credential.identityToken, name, ...(await deviceMeta()) },
+      });
+      await signIn(data);
+    } catch (err) {
+      if (err?.code !== appleAuth.Error.CANCELED) {
+        setError(err instanceof ApiError ? err.message : "Apple sign-in failed. Try again.");
+      }
     } finally {
       setBusy(null);
     }
@@ -176,6 +203,16 @@ export default function SignInScreen() {
             </>
           )}
         </Pressable>
+
+        {Platform.OS === "ios" ? (
+          <AppleButton
+            buttonStyle={AppleButton.Style.WHITE}
+            buttonType={AppleButton.Type.CONTINUE}
+            cornerRadius={12}
+            style={{ width: "100%", height: 50, marginBottom: 12 }}
+            onPress={handleApple}
+          />
+        ) : null}
 
         <Pressable
           onPress={handleInstagram}

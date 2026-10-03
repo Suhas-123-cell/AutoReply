@@ -18,6 +18,10 @@ export function getBaseUrl(): string {
   return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 }
 
+export function getAppleBundleId(): string | null {
+  return process.env.APPLE_BUNDLE_ID?.trim() || null;
+}
+
 export function getEncryptionKeyHex(): string {
   const value = readEnv("ENCRYPTION_KEY");
   if (!HEX_32_BYTE.test(value)) {
