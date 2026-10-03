@@ -30,25 +30,6 @@ model User {
   pushDevices       PushDevice[]
 }
 
-// Phone-number OTP codes for the mobile app's sign-in flow. Mirrors
-// MobileAuthCode (see lib/auth/mobile-codes.ts's docstring for why this is
-// its own table rather than reusing Auth.js's VerificationToken) — same
-// reasoning applies here: a 6-digit code needs its own throttled, single-use
-// table, not a shared one validated by an unrelated unthrottled callback.
-model MobilePhoneAuthCode {
-  id         String    @id @default(cuid())
-  phone      String
-  codeHash   String
-  expiresAt  DateTime
-  attempts   Int       @default(0)
-  consumedAt DateTime?
-  requestIp  String?
-  createdAt  DateTime  @default(now())
-
-  @@index([phone, createdAt])
-  @@index([expiresAt])
-}
-
 model Account {
   id                String  @id @default(cuid())
   userId            String

@@ -140,7 +140,6 @@ export default function SignInScreen() {
         body: { email: trimmed },
       });
       navigation.navigate("Verify", {
-        channel: "email",
         identifier: trimmed,
         devCode: data?.devCode ?? "",
       });
