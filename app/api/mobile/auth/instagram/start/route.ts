@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBaseUrl, getMissingInstagramOAuthEnv } from "@/lib/env";
 import { createSignupOAuthState, getAuthorizationUrl } from "@/lib/meta/oauth";
 import { allowAuthAttemptByIp } from "@/lib/auth/otp-rate-limit";
+import { getClientIp } from "@/lib/http/client-ip";
 
 export const dynamic = "force-dynamic";
-
-function getClientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : null;
-}
 
 // "Sign in with Instagram" entry point — deliberately unauthenticated,
 // unlike app/api/mobile/instagram/connect/route.ts (which links an account
@@ -21,7 +17,7 @@ export async function GET(request: NextRequest) {
   // the Meta round trip in the callback) — IP-only, generous limit since
   // this itself is cheap (no outbound call), just guarding against someone
   // scripting endless state-token generation.
-  const allowed = await allowAuthAttemptByIp("ig-start", getClientIp(request), 30, 3600);
+  const allowed = await allowAuthAttemptByIp("ig-start", getClientIp(request.headers), 30, 3600);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "Too many attempts. Try again later." },

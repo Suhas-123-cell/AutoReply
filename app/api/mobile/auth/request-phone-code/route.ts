@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { allowCodeRequest } from "@/lib/auth/otp-rate-limit";
+import { getClientIp } from "@/lib/http/client-ip";
 import {
   issueMobilePhoneAuthCode,
   normalizePhone,
@@ -17,11 +18,6 @@ export const dynamic = "force-dynamic";
 const requestCodeSchema = z.object({
   phone: z.string().min(8).max(20),
 });
-
-function getClientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : null;
-}
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -42,7 +38,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ip = getClientIp(request);
+  const ip = getClientIp(request.headers);
   const allowed = await allowCodeRequest(phone, ip);
 
   if (!allowed) {

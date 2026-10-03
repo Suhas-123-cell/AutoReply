@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { allowCodeRequest } from "@/lib/auth/otp-rate-limit";
 import { issueMobileAuthCode } from "@/lib/auth/mobile-codes";
+import { getClientIp } from "@/lib/http/client-ip";
 
 // Dev-only escape hatch: echoes the generated code back in the response so a
 // developer can sign in on the mobile app without waiting on a real email.
@@ -17,11 +18,6 @@ const requestCodeSchema = z.object({
   email: z.string().email(),
 });
 
-function getClientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : null;
-}
-
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = requestCodeSchema.safeParse(body);
@@ -33,7 +29,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ip = getClientIp(request);
+  const ip = getClientIp(request.headers);
   const allowed = await allowCodeRequest(parsed.data.email, ip);
 
   if (!allowed) {

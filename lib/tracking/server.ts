@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getRedisConnection } from "@/lib/queue/client";
+import { getClientIp } from "@/lib/http/client-ip";
 
 // The /r/:slug redirect is fully public and unauthenticated (it has to be —
 // it's the link real Instagram users tap), so unlike every other endpoint
@@ -38,16 +39,7 @@ export function hashClickIp(ipAddress: string | null | undefined) {
 }
 
 export function getRequestIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() ?? null;
-  }
-
-  return (
-    request.headers.get("x-real-ip") ??
-    request.headers.get("cf-connecting-ip") ??
-    null
-  );
+  return getClientIp(request.headers);
 }
 
 export function isLikelyLinkPreview(userAgent: string | null) {
