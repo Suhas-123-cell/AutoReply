@@ -2,7 +2,6 @@
 # Run: docker compose -f docker-compose.prod.yml up -d --build
 
 x-app: &app
-  image: autoreply-app
   env_file: .env
   environment:
     NODE_ENV: production
@@ -77,7 +76,10 @@ services:
 
   migrate:
     <<: *app
-    build: .
+    image: autoreply-worker
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
     command: npx prisma migrate deploy
     restart: "no"
     depends_on:
@@ -86,6 +88,14 @@ services:
 
   api:
     <<: *app
+    image: autoreply-api
+    build: .
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      NEXTAUTH_URL: https://${DOMAIN:?set DOMAIN in .env}
+      DATABASE_URL: postgresql://autoreply:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/autoreply
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
     pull_policy: never
     healthcheck:
       test:
@@ -105,6 +115,7 @@ services:
 
   worker:
     <<: *app
+    image: autoreply-worker
     pull_policy: never
     mem_limit: 900m
     command: npm run worker
