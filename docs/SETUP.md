@@ -23,6 +23,7 @@ actually get this value" reference. Run steps are in the main
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes | Firebase console → Project settings → Service accounts → Generate new private key (paste the whole JSON as one line) |
 | `MOBILE_OTP_DEV_ECHO` | Dev only | `true` locally so sign-in codes echo back in the API response instead of needing real email delivery. **Must be unset in production.** |
 | `GOOGLE_WEB_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` / `GOOGLE_ANDROID_CLIENT_ID` | For Google Sign-In | See [Google OAuth clients](#google-oauth-clients) below |
+| `APPLE_BUNDLE_ID` | For iOS Sign in with Apple | Set to the registered bundle ID `com.autoreply.app` |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_ID_STARTER` / `STRIPE_PRICE_ID_AGENCY` | Optional | See [Stripe billing](#stripe-billing-optional) below — self-hosted works fine with none of these set |
 
 ## Meta webhook fields
@@ -82,6 +83,15 @@ Release builds use this key only when all four values are present; they never
 fall back to the debug key. Register the upload certificate's SHA-1 as a new
 Google Android OAuth client for `com.autoreply.app`. Also register the Google
 Play App Signing certificate SHA-1 from Play Console after enrollment.
+
+## Sign in with Apple
+
+Enable **Sign in with Apple** for the `com.autoreply.app` App ID in the Apple
+Developer portal and in the AutoReply target's Xcode Signing & Capabilities.
+The entitlement is checked in, but the Apple Developer capability and signing
+profile must be configured by the account owner. Set `APPLE_BUNDLE_ID` on the
+backend to the same bundle ID. Test first sign-in, a returning sign-in, and
+Hide My Email on a signed physical iOS build.
 
 ## Google OAuth clients
 

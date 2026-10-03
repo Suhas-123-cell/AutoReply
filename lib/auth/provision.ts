@@ -89,3 +89,46 @@ export async function provisionUserByGoogleAccount(input: {
 
   return { user, workspace };
 }
+
+export async function provisionUserByAppleAccount(input: {
+  appleSub: string;
+  email: string | null;
+  name: string | null;
+}): Promise<{ user: User; workspace: Workspace }> {
+  const existingAccount = await prisma.account.findUnique({
+    where: {
+      provider_providerAccountId: {
+        provider: "apple",
+        providerAccountId: input.appleSub,
+      },
+    },
+    include: { user: true },
+  });
+
+  let user: User;
+  if (existingAccount) {
+    user = existingAccount.user;
+  } else {
+    const existingByEmail = input.email
+      ? await prisma.user.findUnique({ where: { email: input.email } })
+      : null;
+    user = existingByEmail ?? await prisma.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        emailVerified: input.email ? new Date() : null,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        userId: user.id,
+        type: "oauth",
+        provider: "apple",
+        providerAccountId: input.appleSub,
+      },
+    });
+  }
+
+  const workspace = await ensureWorkspaceForUser(user.id, user.email);
+  return { user, workspace };
+}
