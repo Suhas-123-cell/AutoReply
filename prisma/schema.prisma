@@ -411,6 +411,7 @@ model WebhookEvent {
 
   @@index([workspaceId])
   @@index([status])
+  @@index([createdAt])
 }
 
 model OperationalEvent {
