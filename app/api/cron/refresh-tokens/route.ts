@@ -4,12 +4,15 @@ import { isAuthorizedCronRequest } from "@/lib/auth/cron";
 import { decryptToken, encryptToken } from "@/lib/meta/oauth";
 import { refreshLongLivedToken } from "@/lib/meta/client";
 import { enqueuePush } from "@/lib/push/notify";
+import { getMonthStart } from "@/lib/billing/usage";
 
 const DAYS_BEFORE_EXPIRY = 10;
 
 export async function pruneOldEvents(now = new Date()) {
-  const webhookCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const authCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const day = 24 * 60 * 60 * 1000;
+  const webhookCutoff = new Date(now.getTime() - 30 * day);
+  const authCutoff = new Date(now.getTime() - day);
+  const logCutoff = new Date(now.getTime() - 90 * day);
   const authCodeWhere = {
     OR: [
       { consumedAt: { lt: authCutoff } },
@@ -17,9 +20,32 @@ export async function pruneOldEvents(now = new Date()) {
     ],
   };
 
+  const expiredSessions = await prisma.session.findMany({
+    where: { expires: { lt: now } },
+    select: { id: true },
+  });
+  const expiredSessionIds = expiredSessions.map((session) => session.id);
+
   await Promise.all([
     prisma.webhookEvent.deleteMany({ where: { createdAt: { lt: webhookCutoff } } }),
     prisma.mobileAuthCode.deleteMany({ where: authCodeWhere }),
+    prisma.operationalEvent.deleteMany({ where: { createdAt: { lt: logCutoff } } }),
+    // Bot messages that matched nothing were private conversations; older
+    // releases stored them, so clear any that remain.
+    prisma.telegramMessageLog.deleteMany({
+      where: {
+        OR: [{ status: "SKIPPED_NO_MATCH" }, { createdAt: { lt: logCutoff } }],
+      },
+    }),
+    // MobileSessionMeta isn't a relation of Session, so it doesn't cascade.
+    prisma.mobileSessionMeta.deleteMany({
+      where: { sessionId: { in: expiredSessionIds } },
+    }),
+    prisma.session.deleteMany({ where: { id: { in: expiredSessionIds } } }),
+    // A claim only matters within its month.
+    prisma.identityUsageClaim.deleteMany({
+      where: { usagePeriodStart: { lt: getMonthStart(now) } },
+    }),
   ]);
 }
 
@@ -35,8 +61,7 @@ export async function GET(request: NextRequest) {
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() + DAYS_BEFORE_EXPIRY);
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = getMonthStart();
 
   const usageReset = await prisma.workspace.updateMany({
     where: { usagePeriodStart: { lt: monthStart } },
