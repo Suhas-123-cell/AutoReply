@@ -36,6 +36,83 @@ import {
 } from "@/lib/tracking/message";
 import { enqueuePush } from "@/lib/push/notify";
 
+// Accounts are tied to a verified phone number: nothing sends for a workspace
+// whose owner hasn't verified one (see lib/auth/phone-verification.ts).
+const OWNER_VERIFIED = {
+  workspace: { owner: { phone: { not: null }, phoneVerified: { not: null } } },
+} as const;
+
+// A person who already received a campaign's link isn't sent it again on
+// every further button tap or "any word" message within this window.
+const REPEAT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FOLLOW_PROMPT_THROTTLE_SECONDS = 60;
+
+// Failure pushes go out once per job, when retries are exhausted, not on
+// every attempt.
+function isFinalAttempt(job: Job): boolean {
+  return job.attemptsMade + 1 >= (job.opts?.attempts ?? 1);
+}
+
+// Re-sending a follow prompt on every tap would let one person trigger
+// unlimited DMs; allow one per user per campaign per minute.
+async function allowFollowPrompt(automationId: string, userId: string) {
+  try {
+    const set = await getRedisConnection().set(
+      `followprompt:${automationId}:${userId}`,
+      "1",
+      "EX",
+      FOLLOW_PROMPT_THROTTLE_SECONDS,
+      "NX"
+    );
+    return set === "OK";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Applies the per-account Instagram send rate limit to DM- and button-
+ * triggered sends (comments do this inline). Returns true when the send may
+ * proceed; otherwise the monthly reservation is released and the job is
+ * requeued, or marked skipped when the burst budget is exhausted.
+ */
+async function acquireSendSlot(
+  job: Job<ProcessPostbackJob | ProcessMessageJob>,
+  workspaceId: string,
+  periodStart: Date | null,
+  markSkipped: () => Promise<unknown>
+): Promise<boolean> {
+  const requeueAttempt = job.data.requeueAttempt ?? 0;
+  const burstRequeueAttempt = job.data.burstRequeueAttempt ?? 0;
+  const rateLimit = await reserveDMSlot(
+    job.data.instagramAccountId,
+    burstRequeueAttempt
+  );
+  if (rateLimit.allowed) return true;
+
+  await releaseWorkspaceDMReservation(workspaceId, periodStart);
+  if (rateLimit.shouldSkip || !rateLimit.shouldRequeue) {
+    await markSkipped();
+    return false;
+  }
+
+  const isBurst = rateLimit.blockedBy === "burst";
+  const next = {
+    requeueAttempt: isBurst ? requeueAttempt : requeueAttempt + 1,
+    burstRequeueAttempt: isBurst ? burstRequeueAttempt + 1 : burstRequeueAttempt,
+  };
+  const baseId = String(job.id ?? job.name).replace(/_rl_\d+_\d+$/, "");
+  await getDMQueue().add(
+    job.name,
+    { ...job.data, ...next },
+    {
+      delay: rateLimit.requeueDelayMs,
+      jobId: `${baseId}_rl_${next.requeueAttempt}_${next.burstRequeueAttempt}`,
+    }
+  );
+  return false;
+}
+
 // The original event time survives retries; a fresh queue job must not reset
 // Meta's 24-hour response window. Old jobs fall back to their enqueue time.
 export function withinMessagingWindow(eventTime?: number, queuedAt?: number) {
@@ -153,6 +230,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
       instagramAccount: {
         instagramId: instagramAccountId,
       },
+      ...OWNER_VERIFIED,
     },
     include: {
       instagramAccount: true,
@@ -281,7 +359,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           commentId,
           matchedKeyword: matchResult.matchedKeyword,
           status: "PENDING",
-          attempts: job.attemptsMade + 1,
+          attempts: 1,
         },
       });
     } else if (needsDm) {
@@ -291,7 +369,9 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         },
         data: {
           status: "PENDING",
-          attempts: job.attemptsMade + 1,
+          // Cumulative across jobs, so the polling reconciler can stop
+          // retrying a comment that keeps failing (see comment-reconciler.ts).
+          attempts: { increment: 1 },
           matchedKeyword: matchResult.matchedKeyword,
           errorMessage: null,
         },
@@ -384,7 +464,6 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         },
         data: {
           status: "FAILED",
-          attempts: job.attemptsMade + 1,
           errorMessage: formatError(error),
         },
       });
@@ -617,23 +696,24 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         },
         data: {
           status: "FAILED",
-          attempts: job.attemptsMade + 1,
           errorMessage: formatError(error),
         },
       });
 
-      await enqueuePush({
-        kind: "send_failure",
-        workspaceId: automation.workspaceId,
-        title: "DM send failed",
-        body: `A DM failed to send for "${automation.name}"`,
-        data: { deepLink: `/logs?highlight=${failedLog.id}` },
-      }).catch((pushError) =>
-        console.error(
-          "[DM Worker] Failed to enqueue push:",
-          formatError(pushError)
-        )
-      );
+      if (isFinalAttempt(job)) {
+        await enqueuePush({
+          kind: "send_failure",
+          workspaceId: automation.workspaceId,
+          title: "DM send failed",
+          body: `A DM failed to send for "${automation.name}"`,
+          data: { deepLink: `/logs?highlight=${failedLog.id}` },
+        }).catch((pushError) =>
+          console.error(
+            "[DM Worker] Failed to enqueue push:",
+            formatError(pushError)
+          )
+        );
+      }
 
       throw error;
     }
@@ -667,7 +747,7 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   );
 
   const automation = await prisma.automation.findFirst({
-    where: { id: automationId, isActive: true },
+    where: { id: automationId, isActive: true, ...OWNER_VERIFIED },
     include: {
       instagramAccount: true,
       workspace: true,
@@ -701,6 +781,20 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   });
   if (existingReveal?.status === "SENT") return;
 
+  // Each tap carries its own message id, so without this every tap would
+  // send the link again and spend another DM from the monthly allowance.
+  const recentReveal = await prisma.dmLog.findFirst({
+    where: {
+      automationId: automation.id,
+      commenterId: userId,
+      commentId: { startsWith: `reveal:${userId}` },
+      status: "SENT",
+      dmSentAt: { gte: new Date(Date.now() - REPEAT_DELIVERY_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (recentReveal) return;
+
   // Personalize {username} from the opening DM log for this user, if present.
   const openingLog = await prisma.dmLog.findFirst({
     where: { automationId: automation.id, commenterId: userId },
@@ -721,6 +815,7 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     const follows = await getUserFollowStatus(accessToken, userId);
     const blocked = follows !== true;
     if (blocked) {
+      if (!(await allowFollowPrompt(automation.id, userId))) return;
       const promptText = renderMessageWithoutLink({
         message: automation.followPromptMessage || DEFAULT_FOLLOW_PROMPT,
         commenterName,
@@ -770,6 +865,37 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
     });
     return;
   }
+
+  const mayPostbackSend = await acquireSendSlot(
+    job,
+    automation.workspaceId,
+    usage.periodStart,
+    () =>
+      prisma.dmLog.upsert({
+        where: {
+          automationId_commentId: {
+            automationId: automation.id,
+            commentId: dedupeId,
+          },
+        },
+        create: {
+          workspaceId: automation.workspaceId,
+          automationId: automation.id,
+          instagramAccountId: automation.instagramAccountId,
+          commenterId: userId,
+          commenterName,
+          commentText: "(button tap)",
+          commentId: dedupeId,
+          status: "SKIPPED_RATE_LIMIT",
+          errorMessage: "Per-second Instagram DM rate limit reached",
+        },
+        update: {
+          status: "SKIPPED_RATE_LIMIT",
+          errorMessage: "Per-second Instagram DM rate limit reached",
+        },
+      })
+  );
+  if (!mayPostbackSend) return;
 
   try {
     if (automation.trackedLinks.length > 0) {
@@ -913,18 +1039,20 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
       update: { status: "FAILED", errorMessage: formatError(error) },
     });
 
-    await enqueuePush({
-      kind: "send_failure",
-      workspaceId: automation.workspaceId,
-      title: "DM send failed",
-      body: `A DM failed to send for "${automation.name}"`,
-      data: { deepLink: `/logs?highlight=${failedLog.id}` },
-    }).catch((pushError) =>
-      console.error(
-        "[DM Worker] Failed to enqueue push:",
-        formatError(pushError)
-      )
-    );
+    if (isFinalAttempt(job)) {
+      await enqueuePush({
+        kind: "send_failure",
+        workspaceId: automation.workspaceId,
+        title: "DM send failed",
+        body: `A DM failed to send for "${automation.name}"`,
+        data: { deepLink: `/logs?highlight=${failedLog.id}` },
+      }).catch((pushError) =>
+        console.error(
+          "[DM Worker] Failed to enqueue push:",
+          formatError(pushError)
+        )
+      );
+    }
 
     throw error;
   }
@@ -951,6 +1079,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
       dmTriggerEnabled: true,
       isActive: true,
       instagramAccount: { instagramId: instagramAccountId },
+      ...OWNER_VERIFIED,
     },
     include: {
       instagramAccount: true,
@@ -989,6 +1118,22 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
       existingLog?.status === "SKIPPED_PLAN_LIMIT"
     ) {
       continue;
+    }
+
+    // "Any word" fires on every message, so without a cooldown a person
+    // chatting with the account would get the campaign reply to each one.
+    if (automation.matchAnyWord) {
+      const recentReply = await prisma.dmLog.findFirst({
+        where: {
+          automationId: automation.id,
+          commenterId: senderId,
+          commentId: { startsWith: "dm:" },
+          status: "SENT",
+          dmSentAt: { gte: new Date(Date.now() - REPEAT_DELIVERY_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      if (recentReply) continue;
     }
 
     const logBase = {
@@ -1041,6 +1186,22 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
       });
       continue;
     }
+
+    const mayMessageSend = await acquireSendSlot(
+      job,
+      automation.workspaceId,
+      usage.periodStart,
+      () => {
+        const errorMessage = "Per-second Instagram DM rate limit reached";
+        return prisma.dmLog.upsert({
+          where: logKey,
+          create: { ...logBase, status: "SKIPPED_RATE_LIMIT", errorMessage },
+          update: { status: "SKIPPED_RATE_LIMIT", errorMessage },
+        });
+      }
+    );
+    // A requeued job re-runs every matching campaign; already-sent ones dedupe.
+    if (!mayMessageSend) return;
 
     try {
       if (sendFollowPrompt) {
@@ -1147,18 +1308,20 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
         usage.periodStart
       );
       const failedLog = await failLog(formatError(error));
-      await enqueuePush({
-        kind: "send_failure",
-        workspaceId: automation.workspaceId,
-        title: "DM send failed",
-        body: `A DM failed to send for "${automation.name}"`,
-        data: { deepLink: `/logs?highlight=${failedLog.id}` },
-      }).catch((pushError) =>
-        console.error(
-          "[DM Worker] Failed to enqueue push:",
-          formatError(pushError)
-        )
-      );
+      if (isFinalAttempt(job)) {
+        await enqueuePush({
+          kind: "send_failure",
+          workspaceId: automation.workspaceId,
+          title: "DM send failed",
+          body: `A DM failed to send for "${automation.name}"`,
+          data: { deepLink: `/logs?highlight=${failedLog.id}` },
+        }).catch((pushError) =>
+          console.error(
+            "[DM Worker] Failed to enqueue push:",
+            formatError(pushError)
+          )
+        );
+      }
       throw error;
     }
   }
@@ -1216,7 +1379,11 @@ async function recordWorkerFailure(
 
     // OWNER-only: a worker crash is an operational concern, not a per-DM
     // event, so it isn't gated by leadAlerts/failureAlerts. No PII in the
-    // payload — just enough to say "something needs attention".
+    // payload — just enough to say "something needs attention". BullMQ emits
+    // "failed" on every attempt; only alert once retries are exhausted.
+    const retriesExhausted =
+      !job || job.attemptsMade >= (job.opts?.attempts ?? 1);
+    if (!retriesExhausted) return;
     await enqueuePush({
       kind: "worker_failure",
       workspaceId: account?.workspaceId ?? null,
