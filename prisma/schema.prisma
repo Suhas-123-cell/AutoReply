@@ -13,6 +13,10 @@ model User {
   id            String    @id @default(cuid())
   name          String?
   email         String?   @unique
+  // Mailbox-level identity (lowercased; dots and +tags stripped for providers
+  // that ignore them, e.g. gmail.com). Sign-in resolves to the existing user
+  // that owns a mailbox, so aliases of one inbox never become extra accounts.
+  canonicalEmail String?
   emailVerified DateTime?
   // E.164 format (e.g. +14155551234). Sign-in creates a pending account;
   // app access requires phoneVerified, and each number belongs to one user.
@@ -28,6 +32,8 @@ model User {
   workspaceMembers  WorkspaceMember[]
   sentInvitations   WorkspaceInvitation[] @relation("WorkspaceInvitationsSent")
   pushDevices       PushDevice[]
+
+  @@index([canonicalEmail])
 }
 
 model Account {
@@ -299,22 +305,6 @@ model DmLog {
   @@index([automationId])
   @@index([instagramAccountId])
   @@index([status])
-}
-
-// Every comment the system has seen, from either the webhook or the polling
-// reconciler. This is the shared dedup set: a comment id present here has
-// already been queued for processing, so neither path acts on it twice. It is
-// distinct from DmLog (which only records comments that matched a campaign);
-// this records all comments so the reconciler doesn't re-sweep non-matching
-// ones every cycle.
-model ProcessedComment {
-  id                 String   @id @default(cuid())
-  instagramAccountId String
-  commentId          String   @unique
-  source             String // "WEBHOOK" | "POLLING"
-  seenAt             DateTime @default(now())
-
-  @@index([instagramAccountId])
 }
 
 model TrackedLink {
@@ -590,4 +580,18 @@ model PushDevice {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// Free-tier usage tied to a verified identity (phone number or mailbox), not
+// to an account. Deleting an account and signing up again with the same
+// phone or email inherits this month's usage instead of a fresh allowance.
+// identityHash is an HMAC (ENCRYPTION_KEY) of "phone:<E.164>" or
+// "email:<canonical email>", so deleted users' identifiers are not stored.
+model IdentityUsageClaim {
+  id                String   @id @default(cuid())
+  identityHash      String   @unique
+  usagePeriodStart  DateTime
+  dmsSentThisPeriod Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

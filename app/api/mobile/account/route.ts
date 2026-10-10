@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
+import { recordIdentityUsage } from "@/lib/auth/identity";
+import { decryptToken } from "@/lib/meta/oauth";
+import { deleteWebhook } from "@/lib/telegram/client";
 
 export const dynamic = "force-dynamic";
 
@@ -72,15 +75,38 @@ export async function DELETE() {
     where: { userId },
     select: { id: true },
   });
-  if (sessions.length > 0) {
-    await prisma.mobileSessionMeta.deleteMany({
-      where: { sessionId: { in: sessions.map((s) => s.id) } },
-    });
+
+  // Stop Telegram delivering updates for bots that are about to be removed.
+  // Best-effort: a revoked bot token must not block account deletion.
+  const bots = await prisma.telegramAccount.findMany({
+    where: { workspace: { ownerId: userId } },
+    select: { botToken: true },
+  });
+  for (const bot of bots) {
+    try {
+      await deleteWebhook(decryptToken(bot.botToken));
+    } catch {
+      // Token revoked or undecryptable — nothing more to clean up remotely.
+    }
   }
 
-  // Cascades: owned (single-member) workspaces, sessions, workspace
-  // memberships, push devices — all via onDelete: Cascade in the schema.
-  await prisma.user.delete({ where: { id: userId } });
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, phone: true, email: true },
+    });
+    // Free-tier usage stays with the phone/email, so deleting the account and
+    // signing up again this month doesn't reset the allowance.
+    if (user) await recordIdentityUsage(tx, user);
+    if (sessions.length > 0) {
+      await tx.mobileSessionMeta.deleteMany({
+        where: { sessionId: { in: sessions.map((s) => s.id) } },
+      });
+    }
+    // Cascades: owned (single-member) workspaces, sessions, workspace
+    // memberships, push devices — all via onDelete: Cascade in the schema.
+    await tx.user.delete({ where: { id: userId } });
+  });
 
   return NextResponse.json({ success: true });
 }

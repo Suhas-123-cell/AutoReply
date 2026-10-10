@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser, getPrimaryWorkspace } from "@/lib/workspace";
 import { getBearerSessionUserId } from "@/lib/auth/bearer";
 import { hasVerifiedPhone } from "@/lib/auth/phone-verification";
+import { canonicalizeEmail } from "@/lib/auth/identity";
 
 type AdapterPrismaClient = Parameters<typeof PrismaAdapter>[0];
 
@@ -28,6 +29,12 @@ export const authConfig = {
   events: {
     async createUser({ user }) {
       if (user.id) {
+        if (user.email) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { canonicalEmail: canonicalizeEmail(user.email) },
+          });
+        }
         await ensureWorkspaceForUser(user.id, user.email);
       }
     },

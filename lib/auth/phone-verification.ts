@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { getFirebaseAuth } from "@/lib/firebase/admin";
+import { applyIdentityUsage } from "@/lib/auth/identity";
 
 type PhoneStatus = { phone: string | null; phoneVerified: Date | null };
 
@@ -47,7 +48,7 @@ export async function attachVerifiedPhone(userId: string, phone: string): Promis
     return await prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: { phone: true, phoneVerified: true },
+        select: { phone: true, phoneVerified: true, email: true },
       });
       if (!user) return { ok: false, reason: "user_not_found" };
       if (hasVerifiedPhone(user)) {
@@ -62,9 +63,11 @@ export async function attachVerifiedPhone(userId: string, phone: string): Promis
         where: { id: userId, phoneVerified: null },
         data: { phone, phoneVerified: new Date() },
       });
-      return attached.count === 1
-        ? { ok: true }
-        : { ok: false, reason: "already_verified" };
+      if (attached.count !== 1) return { ok: false, reason: "already_verified" };
+      // A phone or mailbox that already spent free DMs this month under a
+      // deleted account doesn't get a fresh allowance on a new one.
+      await applyIdentityUsage(tx, { id: userId, phone, email: user.email });
+      return { ok: true };
     });
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
