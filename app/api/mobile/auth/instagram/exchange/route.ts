@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getRedisConnection } from "@/lib/queue/client";
 import { createMobileSession } from "@/lib/auth/mobile-session";
-import { IG_SIGNUP_EXCHANGE_PREFIX } from "@/lib/auth/instagram-signup-exchange";
+import { consumeOAuthResult, toAuthorization } from "@/lib/meta/oauth-flow";
+import { signInWithInstagram } from "@/lib/instagram-oauth";
 import { getWorkspaceMembership } from "@/lib/workspace";
 import { prisma } from "@/lib/db/client";
 import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verification";
@@ -10,18 +10,19 @@ import { hasVerifiedPhone, mobileUserProfile } from "@/lib/auth/phone-verificati
 export const dynamic = "force-dynamic";
 
 const exchangeSchema = z.object({
-  code: z.string().min(1),
+  // The callback's one-time result code from the autoreply://ig-connect link.
+  code: z.string().min(1).max(200),
+  // Issued by /api/mobile/auth/instagram/start to the app that began sign-in.
+  verifier: z.string().min(1).max(200),
   platform: z.enum(["ios", "android"]),
   deviceName: z.string().max(120).optional(),
   appVersion: z.string().max(40).optional(),
 });
 
-// Redeems the short-lived, single-use code the callback route put in the
-// autoreply://ig-connect deep link. A real session token never travels
-// through the deep link itself (a redirect URL is more exposed than a
-// direct POST body — it can end up in OS-level link-open logs) — only this
-// opaque code does, and it's dead the moment it's read once or 60s pass,
-// whichever comes first.
+// Redeems the sign-in result. A session token never travels through the deep
+// link, and the result is useless without the verifier only the initiating
+// app holds — so a crafted link can't sign a victim into someone else's
+// account, and a forwarded authorize URL can't sign anyone in as its owner.
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = exchangeSchema.safeParse(body);
@@ -32,19 +33,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const redis = getRedisConnection();
-  const key = `${IG_SIGNUP_EXCHANGE_PREFIX}${parsed.data.code}`;
-  const userId = await redis.get(key);
-  if (!userId) {
+  const pending = await consumeOAuthResult(
+    parsed.data.code,
+    parsed.data.verifier,
+    "mobile-signup"
+  );
+  if (!pending) {
     return NextResponse.json(
       { success: false, error: "This sign-in link has expired. Try again." },
       { status: 401 }
     );
   }
-  await redis.del(key);
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const membership = await getWorkspaceMembership(userId);
+  const signIn = await signInWithInstagram(toAuthorization(pending));
+  if (!signIn.ok) {
+    return NextResponse.json({ success: false, error: signIn.error }, { status: 409 });
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: signIn.userId } });
+  const membership = await getWorkspaceMembership(signIn.userId);
   if (!user || !membership) {
     return NextResponse.json(
       { success: false, error: "Account not found" },

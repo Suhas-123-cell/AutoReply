@@ -1,8 +1,12 @@
 import { useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
-import InAppBrowser from "react-native-inappbrowser-reborn";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../../src/api/client";
+import {
+  completeInstagramFlow,
+  describeConnectOutcome,
+  startInstagramFlow,
+} from "../../../src/auth/instagram-oauth";
 import { useAuth } from "../../../src/auth/AuthContext";
 import { canManageWorkspace } from "../../../src/lib/workspace-access";
 import { confirmAsync } from "../../../src/lib/confirm";
@@ -36,17 +40,19 @@ export default function InstagramSettingsScreen() {
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      const { authorizeUrl } = await apiFetch("/api/mobile/instagram/connect");
-      if (await InAppBrowser.isAvailable()) {
-        await InAppBrowser.openAuth(authorizeUrl, "autoreply://ig-connect", {
-          ephemeralWebSession: false,
-        });
-      } else {
-        await Linking.openURL(authorizeUrl);
+      // When the in-app browser hands the redirect back here, finish now;
+      // otherwise app/ig-connect.jsx finishes from the deep link.
+      const redirect = await startInstagramFlow("connect");
+      if (redirect) {
+        const completion = await completeInstagramFlow(redirect);
+        if (completion.first) {
+          const outcome = describeConnectOutcome(completion.data);
+          if (!outcome.ok) Alert.alert(outcome.title, outcome.reason ?? undefined);
+        }
       }
     } catch (err) {
       Alert.alert(
-        "Couldn't start connection",
+        "Couldn't connect Instagram",
         err instanceof ApiError ? err.message : "Please try again."
       );
     } finally {

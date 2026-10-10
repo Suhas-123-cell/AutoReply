@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBaseUrl, getMissingInstagramOAuthEnv } from "@/lib/env";
-import { createSignupOAuthState, getAuthorizationUrl } from "@/lib/meta/oauth";
+import { getMissingInstagramOAuthEnv } from "@/lib/env";
+import { getAuthorizationUrl } from "@/lib/meta/oauth";
+import { startOAuthFlow } from "@/lib/meta/oauth-flow";
+import { getInstagramRedirectUri } from "@/lib/instagram-oauth";
 import { allowAuthAttemptByIp } from "@/lib/auth/otp-rate-limit";
 import { getClientIp } from "@/lib/http/client-ip";
 
@@ -10,8 +12,7 @@ export const dynamic = "force-dynamic";
 // unlike app/api/mobile/instagram/connect/route.ts (which links an account
 // to an *existing* logged-in user's workspace). This is the account-creation
 // path: no session exists yet, so identity comes entirely from the Instagram
-// OAuth round trip itself, via app/api/instagram/callback/route.ts's
-// "mobile-signup" branch.
+// OAuth round trip itself (see lib/instagram-oauth.ts's signInWithInstagram).
 export async function GET(request: NextRequest) {
   // No per-identifier key exists this early (identity only resolves after
   // the Meta round trip in the callback) — IP-only, generous limit since
@@ -33,11 +34,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectUri = `${getBaseUrl()}/api/instagram/callback`;
-  const state = createSignupOAuthState();
+  // The verifier stays in the app; the exchange route only signs in with a
+  // result redeemed alongside it (see lib/meta/oauth-flow.ts).
+  const { state, verifier } = await startOAuthFlow({ client: "mobile-signup" });
 
   return NextResponse.json({
     success: true,
-    data: { authorizeUrl: getAuthorizationUrl(redirectUri, state) },
+    data: {
+      authorizeUrl: getAuthorizationUrl(getInstagramRedirectUri(), state),
+      verifier,
+    },
   });
 }

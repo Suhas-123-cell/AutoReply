@@ -1,90 +1,65 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import DeviceInfo from "react-native-device-info";
-import { apiFetch, ApiError } from "../src/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/AuthContext";
+import { completeInstagramFlow, describeConnectOutcome } from "../src/auth/instagram-oauth";
 import { colors } from "../src/ui/tokens";
 
-// Deep-link landing screen for autoreply://ig-connect?status=...&reason=...
-// (Meta -> /api/instagram/callback -> this route, opened via
-// react-native-inappbrowser-reborn's openAuth from either the Settings
-// screen — connecting an account to an already-signed-in workspace — or
-// sign-in.jsx's "Continue with Instagram" — a brand-new account, no prior
-// session). Those two cases are told apart by whether a `code` param is
-// present: only the sign-in case produces one (see
-// app/api/instagram/callback/route.ts's mobile-signup branch).
-const STATUS_COPY = {
-  connected: { title: "Instagram connected", tone: "success" },
-  already_connected: { title: "Account already connected", tone: "success" },
-  denied: { title: "Connection cancelled", tone: "error" },
-  invalid: { title: "Something went wrong", tone: "error" },
-  forbidden: { title: "Not allowed", tone: "error" },
-  failed: { title: "Connection failed", tone: "error" },
-};
-
+// Deep-link landing screen for autoreply://ig-connect?status=…&result=…
+// (Meta -> /api/instagram/callback -> here). The result is redeemed with the
+// verifier this device kept when it started the flow — see
+// src/auth/instagram-oauth.js. A link this device didn't start fails there.
 export default function IgConnectScreen() {
-  const { status, reason, code } = useRoute().params ?? {};
+  const { status, reason, result } = useRoute().params ?? {};
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
   const { isSignedIn, isAuthorized, signIn } = useAuth();
-  const [exchanging, setExchanging] = useState(Boolean(code));
-  const [exchangeError, setExchangeError] = useState(null);
+  const [outcome, setOutcome] = useState(null);
 
   useEffect(() => {
-    if (!code) return;
     let cancelled = false;
-
-    (async () => {
-      try {
-        const deviceName = await DeviceInfo.getDeviceName().catch(() => undefined);
-        const data = await apiFetch("/api/mobile/auth/instagram/exchange", {
-          method: "POST",
-          body: {
-            code,
-            platform: Platform.OS,
-            deviceName,
-            appVersion: DeviceInfo.getVersion(),
-          },
+    completeInstagramFlow({ status, reason, result })
+      .then(async ({ kind, data, first }) => {
+        if (kind === "signup") {
+          // RootNavigator opens phone verification until this account is verified.
+          if (first) await signIn(data);
+          if (!cancelled) setOutcome({ ok: true, title: "Signed in with Instagram", reason: null });
+          return;
+        }
+        queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        if (!cancelled) setOutcome(describeConnectOutcome(data));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setOutcome({
+          ok: false,
+          title: "Instagram didn't connect",
+          reason: err instanceof ApiError ? err.message : "Something went wrong. Try again.",
         });
-        if (cancelled) return;
-        await signIn(data);
-        // RootNavigator opens phone verification until this account is verified.
-      } catch (err) {
-        if (cancelled) return;
-        setExchangeError(
-          err instanceof ApiError ? err.message : "Couldn't finish signing in. Try again."
-        );
-      } finally {
-        if (!cancelled) setExchanging(false);
-      }
-    })();
-
+      });
     return () => {
       cancelled = true;
     };
-  }, [code, signIn]);
-
-  const copy = exchangeError
-    ? { title: "Sign-in failed", tone: "error" }
-    : STATUS_COPY[status] ?? { title: "Unknown status", tone: "error" };
-  const displayedReason = exchangeError ?? reason;
+  }, [status, reason, result, signIn, queryClient]);
 
   const handleContinue = () => {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      // No back stack (e.g. this deep link was the very first screen to
-      // mount) — land on whichever root entry point matches auth state,
-      // same as the old router.replace("/(app)/dashboard") fallback.
+      // No back stack (this deep link was the first screen to mount) — land
+      // on whichever root entry point matches auth state.
       navigation.reset({ index: 0, routes: [{ name: isAuthorized ? "AppTabs" : isSignedIn ? "VerifyPhone" : "AuthStack" }] });
     }
   };
 
-  if (exchanging) {
+  if (!outcome) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
         <ActivityIndicator color={colors.foreground} />
-        <Text className="mt-4 text-muted">Finishing sign-in…</Text>
+        <Text className="mt-4 text-muted">Finishing with Instagram…</Text>
       </View>
     );
   }
@@ -92,14 +67,12 @@ export default function IgConnectScreen() {
   return (
     <View className="flex-1 items-center justify-center bg-background px-6">
       <Text
-        className={`mb-2 text-xl font-bold ${
-          copy.tone === "success" ? "text-success" : "text-error"
-        }`}
+        className={`mb-2 text-center text-xl font-bold ${outcome.ok ? "text-success" : "text-error"}`}
       >
-        {copy.title}
+        {outcome.title}
       </Text>
-      {displayedReason ? (
-        <Text className="mb-6 text-center text-sm text-muted">{displayedReason}</Text>
+      {outcome.reason ? (
+        <Text className="mb-6 text-center text-sm text-muted">{outcome.reason}</Text>
       ) : null}
 
       <Pressable onPress={handleContinue} className="rounded-lg bg-accent px-6 py-3">

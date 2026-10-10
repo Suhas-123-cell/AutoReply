@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   Text,
@@ -11,12 +10,12 @@ import {
 } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
-import InAppBrowser from "react-native-inappbrowser-reborn";
 import DeviceInfo from "react-native-device-info";
 import { appleAuth, AppleButton } from "@invertase/react-native-apple-authentication";
 import { apiFetch, ApiError } from "../../src/api/client";
 import { useAuth } from "../../src/auth/AuthContext";
 import { signInWithGoogle } from "../../src/auth/google-signin";
+import { completeInstagramFlow, startInstagramFlow } from "../../src/auth/instagram-oauth";
 import { colors } from "../../src/ui/tokens";
 
 // Same brand mark as the web landing page (app/page.tsx's Logomark) — a chat
@@ -133,16 +132,12 @@ export default function SignInScreen() {
     setError(null);
     setBusy("instagram");
     try {
-      const { authorizeUrl } = await apiFetch("/api/mobile/auth/instagram/start");
-      // Resolves once the in-app browser redirects to autoreply://ig-connect,
-      // which app/ig-connect.jsx handles — it reads the `code` param this
-      // flow produces and finishes signing in there. See that file.
-      if (await InAppBrowser.isAvailable()) {
-        await InAppBrowser.openAuth(authorizeUrl, "autoreply://ig-connect", {
-          ephemeralWebSession: false,
-        });
-      } else {
-        await Linking.openURL(authorizeUrl);
+      // When the in-app browser hands the redirect back here, finish now;
+      // otherwise app/ig-connect.jsx finishes from the deep link.
+      const redirect = await startInstagramFlow("signup");
+      if (redirect) {
+        const { kind, data, first } = await completeInstagramFlow(redirect);
+        if (first && kind === "signup") await signIn(data);
       }
     } catch (err) {
       setError(

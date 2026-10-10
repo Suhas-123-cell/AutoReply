@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { canManageWorkspace, getCurrentWorkspaceContext } from "@/lib/workspace-access";
-import { getBaseUrl, getMissingInstagramOAuthEnv } from "@/lib/env";
-import { createOAuthState, getAuthorizationUrl } from "@/lib/meta/oauth";
+import { getMissingInstagramOAuthEnv } from "@/lib/env";
+import { getAuthorizationUrl } from "@/lib/meta/oauth";
+import { startOAuthFlow } from "@/lib/meta/oauth-flow";
+import { getInstagramRedirectUri } from "@/lib/instagram-oauth";
 
 export const dynamic = "force-dynamic";
 
-// Mobile counterpart to app/api/instagram/connect/route.ts. That route 302s
-// straight to Meta because a web <a> tag can follow a redirect; a mobile
-// client instead opens the URL itself in an in-app browser session
-// (expo-web-browser's openAuthSessionAsync), so this returns JSON instead of
-// redirecting. The signed state additionally carries the userId, since
-// there is no session cookie inside that in-app browser for the callback to
-// read — see app/api/instagram/callback/route.ts's `isMobile` branch.
+// Mobile counterpart to app/api/instagram/connect/route.ts. Returns the
+// authorize URL for the app to open in an in-app browser, plus a verifier the
+// app keeps. The callback only stores the authorized result; the app then
+// redeems it at /api/mobile/instagram/complete with this verifier, so an
+// authorize link forwarded to someone else can never connect their account.
 export async function GET() {
   const userId = await getCurrentUserId();
   if (!userId) {
@@ -45,13 +45,17 @@ export async function GET() {
     );
   }
 
-  // Same redirect URI as the web flow — the Meta app's allowlist needs no
-  // change for mobile.
-  const redirectUri = `${getBaseUrl()}/api/instagram/callback`;
-  const state = createOAuthState(context.workspaceId, { userId });
+  const { state, verifier } = await startOAuthFlow({
+    client: "mobile",
+    userId,
+    workspaceId: context.workspaceId,
+  });
 
   return NextResponse.json({
     success: true,
-    data: { authorizeUrl: getAuthorizationUrl(redirectUri, state) },
+    data: {
+      authorizeUrl: getAuthorizationUrl(getInstagramRedirectUri(), state),
+      verifier,
+    },
   });
 }

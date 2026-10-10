@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
-import { getBaseUrl } from "@/lib/env";
-import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
-import { canConnectAnotherAccount } from "@/lib/billing/usage";
-import { getLongLivedToken, getUserInfo, subscribeInstagramAccountToWebhooks } from "@/lib/meta/client";
+import { verifyOAuthState } from "@/lib/meta/oauth";
 import {
-  encryptToken,
-  exchangeCodeForToken,
-  verifyOAuthState,
-} from "@/lib/meta/oauth";
-import { canManageWorkspace } from "@/lib/workspace-access";
-import { issueInstagramSignupExchangeCode } from "@/lib/auth/instagram-signup-exchange";
-import { ensureWorkspaceForUser } from "@/lib/workspace";
+  consumeOAuthFlow,
+  storeOAuthResult,
+  WEB_FLOW_COOKIE,
+} from "@/lib/meta/oauth-flow";
+import {
+  authorizeInstagram,
+  connectAuthorizedInstagramAccount,
+} from "@/lib/instagram-oauth";
 import { legalPage } from "@/lib/legal/page";
-import { hasVerifiedPhone } from "@/lib/auth/phone-verification";
 
 type OutcomeStatus =
   | "denied"
@@ -23,6 +20,7 @@ type OutcomeStatus =
   | "forbidden"
   | "already_connected"
   | "connected"
+  | "authorized"
   | "failed";
 
 export function webOutcomePage(status: OutcomeStatus): Response {
@@ -32,265 +30,97 @@ export function webOutcomePage(status: OutcomeStatus): Response {
   return legalPage(title, "<p>You can close this window and return to AutoReply.</p>");
 }
 
-// The mobile app registers this custom scheme (see mobile/android/.../AndroidManifest.xml
-// and mobile/ios/.../Info.plist) and react-native-inappbrowser-reborn's
-// openAuth intercepts it, so Meta's redirect never actually loads in a
-// visible browser tab on mobile. `code` is only ever present for the
-// mobile-signup flow — see issueInstagramSignupExchangeCode's docstring for
-// why a real session token never travels through this URL.
+// The mobile app registers this custom scheme and react-native-inappbrowser-
+// reborn's openAuth intercepts it. `result` is a one-time code the app
+// redeems together with the verifier it received when it started the flow
+// (see lib/meta/oauth-flow.ts) — nothing is connected or signed in until then.
 function mobileDeepLinkFor(
   status: OutcomeStatus,
-  opts?: { reason?: string; code?: string }
+  opts?: { reason?: string; result?: string }
 ): string {
   const params = new URLSearchParams({ status });
   if (opts?.reason) params.set("reason", opts.reason.slice(0, 200));
-  if (opts?.code) params.set("code", opts.code);
+  if (opts?.result) params.set("result", opts.result);
   return `autoreply://ig-connect?${params.toString()}`;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const error = request.nextUrl.searchParams.get("error");
   const state = verifyOAuthState(request.nextUrl.searchParams.get("state"));
-  const baseUrl = getBaseUrl();
   const isMobile = state?.client === "mobile" || state?.client === "mobile-signup";
-  const isSignup = state?.client === "mobile-signup";
 
-  const finish = (
-    status: OutcomeStatus,
-    opts?: { reason?: string; exchangeCode?: string }
-  ) => isMobile
-    ? NextResponse.redirect(mobileDeepLinkFor(status, {
-        reason: opts?.reason,
-        code: opts?.exchangeCode,
-      }))
-    : webOutcomePage(status);
+  const finish = (status: OutcomeStatus, opts?: { reason?: string; result?: string }) => {
+    if (isMobile) return NextResponse.redirect(mobileDeepLinkFor(status, opts));
+    const response = webOutcomePage(status);
+    response.headers.append(
+      "Set-Cookie",
+      `${WEB_FLOW_COOKIE}=; Path=/api/instagram/callback; Max-Age=0; HttpOnly; SameSite=Lax`
+    );
+    return response;
+  };
 
-  if (error) {
-    return finish("denied");
-  }
+  if (!state) return finish("invalid");
 
-  if (!code || !state) {
-    return finish("invalid");
-  }
+  // Single use: a replayed or forged state finds no flow.
+  const flow = await consumeOAuthFlow(state.flowId, state.client);
+  if (!flow) return finish("invalid");
+  if (error) return finish("denied");
+  if (!code) return finish("invalid");
 
-  // "Sign in with Instagram" has no existing user/workspace to authorize
-  // against — identity comes entirely from the OAuth round trip below, so it
-  // skips straight past the acting-user/membership checks that every other
-  // flow needs.
-  if (isSignup) {
-    try {
-      const redirectUri = `${baseUrl}/api/instagram/callback`;
-      const { accessToken: shortLivedToken } = await exchangeCodeForToken(
-        code,
-        redirectUri
-      );
-      const { accessToken: longLivedToken, expiresIn } =
-        await getLongLivedToken(shortLivedToken);
-      const userInfo = await getUserInfo(longLivedToken);
-      const instagramId = userInfo.user_id ?? userInfo.id;
-      const encryptedToken = encryptToken(longLivedToken);
-      const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
-
-      let webhookSubscribed = false;
-      try {
-        const subscription = await subscribeInstagramAccountToWebhooks(
-          instagramId,
-          longLivedToken
-        );
-        webhookSubscribed = Boolean(subscription.success);
-      } catch (subscriptionError) {
-        console.warn(
-          "[Instagram Callback] Webhook subscription failed:",
-          subscriptionError
-        );
-      }
-
-      const existingAccount = await prisma.instagramAccount.findUnique({
-        where: { instagramId },
-        include: { workspace: true },
-      });
-
-      let signedInUserId: string;
-
-      if (existingAccount) {
-        // This Instagram identity is already connected somewhere — sign the
-        // workspace owner back in rather than creating a duplicate account.
-        signedInUserId = existingAccount.workspace.ownerId;
-        await prisma.instagramAccount.update({
-          where: { instagramId },
-          data: { accessToken: encryptedToken, tokenExpiresAt, webhookSubscribed },
-        });
-      } else {
-        // True first-time sign-up: Instagram's Business Login API never
-        // returns an email, so the new user has none — matches User.email's
-        // existing nullable design for accounts without an email address.
-        const user = await prisma.user.create({
-          data: { name: userInfo.name ?? userInfo.username },
-        });
-        const workspace = await ensureWorkspaceForUser(user.id, null);
-        await prisma.instagramAccount.create({
-          data: {
-            workspaceId: workspace.id,
-            instagramId,
-            username: userInfo.username,
-            name: userInfo.name,
-            accessToken: encryptedToken,
-            tokenExpiresAt,
-            webhookSubscribed,
-          },
-        });
-        signedInUserId = user.id;
-      }
-
-      const exchangeCode = await issueInstagramSignupExchangeCode(signedInUserId);
-      return finish("connected", { exchangeCode });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("[Instagram Callback] Signup error:", err);
-      return finish("failed", { reason: message });
+  if (flow.client === "web") {
+    // The flow must come back to the browser that started it, signed in as
+    // the user who started it.
+    if (request.cookies.get(WEB_FLOW_COOKIE)?.value !== state.flowId) {
+      return finish("forbidden");
     }
-  }
-
-  // Every non-signup flow's state carries a workspaceId (enforced by
-  // verifyOAuthState) — this just narrows the type for TypeScript, since
-  // OAuthStatePayload.workspaceId is optional to accommodate mobile-signup.
-  if (!state.workspaceId) {
-    return finish("invalid");
-  }
-  const workspaceId = state.workspaceId;
-
-  // Web identifies the acting user from the session cookie. Mobile has no
-  // cookie inside its in-app auth browser, so its identity travels in the
-  // signed state instead (set by app/api/mobile/instagram/connect/route.ts).
-  let actingUserId: string | null;
-  if (isMobile) {
-    actingUserId = state.userId ?? null;
-  } else {
     const session = await auth();
-    actingUserId = session?.user?.id ?? null;
-  }
+    if (session?.user?.id !== flow.userId) return finish("login");
 
-  if (!actingUserId) {
-    return finish(isMobile ? "invalid" : "login");
-  }
-
-  const actingUser = await prisma.user.findUnique({
-    where: { id: actingUserId },
-    select: { phone: true, phoneVerified: true },
-  });
-  if (!hasVerifiedPhone(actingUser)) {
-    return finish("forbidden", { reason: "Verify your phone before connecting Instagram." });
-  }
-
-  const membership = await prisma.workspaceMember.findFirst({
-    where: {
-      workspaceId: workspaceId,
-      userId: actingUserId,
-    },
-  });
-
-  if (!membership || !canManageWorkspace(membership.role)) {
-    return finish("forbidden");
+    try {
+      const authorization = await authorizeInstagram(code);
+      const outcome = await connectAuthorizedInstagramAccount({
+        actingUserId: flow.userId,
+        workspaceId: flow.workspaceId,
+        authorization,
+      });
+      return finish(outcome.status);
+    } catch (err) {
+      console.error("[Instagram Callback] Error:", err);
+      await recordConnectFailure(flow.workspaceId, errorMessage(err));
+      return finish("failed");
+    }
   }
 
   try {
-    const redirectUri = `${baseUrl}/api/instagram/callback`;
-    const { accessToken: shortLivedToken } = await exchangeCodeForToken(
-      code,
-      redirectUri
-    );
-    const { accessToken: longLivedToken, expiresIn } =
-      await getLongLivedToken(shortLivedToken);
-    const userInfo = await getUserInfo(longLivedToken);
-    // Webhooks and the messaging API key off the professional account ID
-    // (user_id), not the app-scoped `id`. Store user_id so comment webhooks
-    // can be matched back to this account. Fall back to id if user_id is
-    // ever absent.
-    const instagramId = userInfo.user_id ?? userInfo.id;
-    const connection = await canConnectInstagramAccount({
-      workspaceId: workspaceId,
-      instagramId,
-    });
-
-    if (!connection.allowed) {
-      return finish("already_connected");
-    }
-
-    // Only a brand-new account consumes a connected-account slot — the
-    // upsert below also handles re-auth of an already-connected account,
-    // which must never count against the plan limit twice.
-    const isNewConnection = !(await prisma.instagramAccount.findUnique({
-      where: { instagramId },
-      select: { id: true },
-    }));
-    if (isNewConnection) {
-      const accountLimit = await canConnectAnotherAccount(workspaceId);
-      if (!accountLimit.allowed) {
-        return finish("failed", {
-          reason:
-            "Your plan's connected-account limit has been reached. Upgrade to connect more accounts.",
-        });
-      }
-    }
-
-    const encryptedToken = encryptToken(longLivedToken);
-    const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    let webhookSubscribed = false;
-    try {
-      const subscription = await subscribeInstagramAccountToWebhooks(
-        instagramId,
-        longLivedToken
-      );
-      webhookSubscribed = Boolean(subscription.success);
-    } catch (subscriptionError) {
-      console.warn(
-        "[Instagram Callback] Webhook subscription failed:",
-        subscriptionError
-      );
-    }
-
-    await prisma.instagramAccount.upsert({
-      where: { instagramId },
-      create: {
-        workspaceId: workspaceId,
-        instagramId,
-        username: userInfo.username,
-        name: userInfo.name,
-        accessToken: encryptedToken,
-        tokenExpiresAt,
-        webhookSubscribed,
-      },
-      update: {
-        workspaceId: workspaceId,
-        username: userInfo.username,
-        name: userInfo.name,
-        accessToken: encryptedToken,
-        tokenExpiresAt,
-        webhookSubscribed,
-      },
-    });
-
-    return finish("connected");
+    const authorization = await authorizeInstagram(code);
+    const result = await storeOAuthResult({ ...flow, ...authorization });
+    return finish("authorized", { result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[Instagram Callback] Error:", err);
-    // The message is the only diagnostic a self-hoster gets for a failed
-    // connect, so persist it alongside the other operational events rather
-    // than leaving it in server logs they may not be able to reach.
-    await prisma.operationalEvent
-      .create({
-        data: {
-          source: "SYSTEM",
-          level: "ERROR",
-          workspaceId: workspaceId,
-          message: "Instagram connection failed",
-          payload: { reason: message },
-        },
-      })
-      .catch(() => {});
-
-    return finish("failed", { reason: message });
+    if (flow.client === "mobile") {
+      await recordConnectFailure(flow.workspaceId, errorMessage(err));
+    }
+    return finish("failed", { reason: errorMessage(err) });
   }
+}
+
+// The message is the only diagnostic a self-hoster gets for a failed
+// connect, so persist it alongside the other operational events.
+async function recordConnectFailure(workspaceId: string, reason: string) {
+  await prisma.operationalEvent
+    .create({
+      data: {
+        source: "SYSTEM",
+        level: "ERROR",
+        workspaceId,
+        message: "Instagram connection failed",
+        payload: { reason },
+      },
+    })
+    .catch(() => {});
 }
