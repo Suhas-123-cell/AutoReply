@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   membership: vi.fn(),
   user: { findUnique: vi.fn() },
-  redis: { get: vi.fn(), del: vi.fn() },
+  consumeResult: vi.fn(),
+  signInWithInstagram: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/otp-rate-limit", () => ({
@@ -38,7 +39,11 @@ vi.mock("@/lib/auth/provision", () => ({
 vi.mock("@/lib/auth/mobile-session", () => ({ createMobileSession: mocks.createSession }));
 vi.mock("@/lib/workspace", () => ({ getWorkspaceMembership: mocks.membership }));
 vi.mock("@/lib/db/client", () => ({ prisma: { user: mocks.user } }));
-vi.mock("@/lib/queue/client", () => ({ getRedisConnection: () => mocks.redis }));
+vi.mock("@/lib/meta/oauth-flow", () => ({
+  consumeOAuthResult: mocks.consumeResult,
+  toAuthorization: (result: Record<string, unknown>) => result,
+}));
+vi.mock("@/lib/instagram-oauth", () => ({ signInWithInstagram: mocks.signInWithInstagram }));
 vi.mock("@/lib/firebase/admin", () => ({ getFirebaseAuth: vi.fn() }));
 vi.mock("@/lib/http/client-ip", () => ({ getClientIp: () => "203.0.113.1" }));
 
@@ -60,7 +65,11 @@ const signIns = [
   { name: "email", route: emailSignIn, body: { email: user.email, code: "123456", platform: "ios" } },
   { name: "Google", route: googleSignIn, body: { idToken: "google-token", platform: "android" } },
   { name: "Apple", route: appleSignIn, body: { idToken: "apple-token", name: user.name } },
-  { name: "Instagram", route: instagramSignIn, body: { code: "exchange-code", platform: "ios" } },
+  {
+    name: "Instagram",
+    route: instagramSignIn,
+    body: { code: "result-code", verifier: "device-verifier", platform: "ios" },
+  },
 ];
 
 function request(body: Record<string, unknown>) {
@@ -92,8 +101,16 @@ beforeEach(() => {
   });
   mocks.createSession.mockResolvedValue({ sessionToken: "pending-session-token", expires });
   mocks.membership.mockResolvedValue({ role: "OWNER", workspace });
-  mocks.redis.get.mockResolvedValue(user.id);
-  mocks.redis.del.mockResolvedValue(1);
+  mocks.consumeResult.mockResolvedValue({
+    client: "mobile-signup",
+    verifierHash: "hash",
+    instagramId: "ig_1",
+    username: "member",
+    name: "Member",
+    encryptedToken: "encrypted",
+    tokenExpiresAt: "2026-12-01T00:00:00.000Z",
+  });
+  mocks.signInWithInstagram.mockResolvedValue({ ok: true, userId: user.id });
   provisionPhoneStatus(null, null);
 });
 
@@ -151,5 +168,33 @@ describe("mobile sign-in phone enrollment contract", () => {
         phoneVerificationRequired: false,
       },
     });
+  });
+});
+
+describe("Instagram sign-in exchange", () => {
+  it("rejects a result redeemed without this device's verifier", async () => {
+    mocks.consumeResult.mockResolvedValue(null);
+
+    const response = await instagramSignIn(
+      request({ code: "result-code", verifier: "wrong", platform: "ios" })
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.signInWithInstagram).not.toHaveBeenCalled();
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses to sign in as whoever connected someone else's Instagram account", async () => {
+    mocks.signInWithInstagram.mockResolvedValue({
+      ok: false,
+      error: "This Instagram account is already connected to an AutoReply workspace.",
+    });
+
+    const response = await instagramSignIn(
+      request({ code: "result-code", verifier: "device-verifier", platform: "ios" })
+    );
+
+    expect(response.status).toBe(409);
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 });

@@ -14,18 +14,16 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
+// The signed state only names a server-side flow (lib/meta/oauth-flow.ts):
+// who started it, for which workspace, and the verifier hash live in Redis
+// and are consumed once, so a state can neither be replayed nor carry
+// identity on its own.
+export type OAuthClient = "web" | "mobile" | "mobile-signup";
+
 interface OAuthStatePayload {
-  // Absent only for the mobile "sign up with Instagram" flow (client ===
-  // "mobile-signup"), where there is no workspace yet — the callback route
-  // creates one. Every other flow requires it.
-  workspaceId?: string;
+  flowId: string;
   ts: number;
-  // Present only for mobile-initiated connects (see
-  // app/api/mobile/instagram/connect/route.ts). The mobile OAuth session has
-  // no session cookie inside ASWebAuthenticationSession, so identity has to
-  // travel in the signed state instead of coming from auth().
-  userId?: string;
-  client?: "mobile" | "mobile-signup";
+  client: OAuthClient;
 }
 
 function base64UrlEncode(value: string): string {
@@ -42,29 +40,9 @@ function signState(payload: string): string {
     .digest("base64url");
 }
 
-export function createOAuthState(
-  workspaceId: string,
-  mobile?: { userId: string }
-): string {
+export function createOAuthState(flowId: string, client: OAuthClient): string {
   const payload = base64UrlEncode(
-    JSON.stringify({
-      workspaceId,
-      ts: Date.now(),
-      ...(mobile ? { userId: mobile.userId, client: "mobile" as const } : {}),
-    } satisfies OAuthStatePayload)
-  );
-  return `${payload}.${signState(payload)}`;
-}
-
-// Mobile "sign up with Instagram" — no workspace exists yet, so this omits
-// workspaceId entirely rather than passing a placeholder. See
-// app/api/mobile/auth/instagram/start/route.ts.
-export function createSignupOAuthState(): string {
-  const payload = base64UrlEncode(
-    JSON.stringify({
-      ts: Date.now(),
-      client: "mobile-signup" as const,
-    } satisfies OAuthStatePayload)
+    JSON.stringify({ flowId, ts: Date.now(), client } satisfies OAuthStatePayload)
   );
   return `${payload}.${signState(payload)}`;
 }
@@ -88,14 +66,9 @@ export function verifyOAuthState(state: string | null): OAuthStatePayload | null
 
   try {
     const parsed = JSON.parse(base64UrlDecode(payload)) as OAuthStatePayload;
-    if (Date.now() - parsed.ts > STATE_MAX_AGE_MS) {
-      return null;
-    }
-    // Every flow except mobile-signup must carry a workspaceId.
-    if (!parsed.workspaceId && parsed.client !== "mobile-signup") {
-      return null;
-    }
-
+    if (Date.now() - parsed.ts > STATE_MAX_AGE_MS) return null;
+    if (typeof parsed.flowId !== "string" || !parsed.flowId) return null;
+    if (!["web", "mobile", "mobile-signup"].includes(parsed.client)) return null;
     return parsed;
   } catch {
     return null;

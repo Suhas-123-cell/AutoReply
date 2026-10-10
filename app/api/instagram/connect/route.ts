@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { canManageWorkspace, getCurrentWorkspaceContext } from "@/lib/workspace-access";
 import { getBaseUrl, getMissingInstagramOAuthEnv } from "@/lib/env";
-import { createOAuthState, getAuthorizationUrl } from "@/lib/meta/oauth";
+import { getAuthorizationUrl } from "@/lib/meta/oauth";
+import {
+  startOAuthFlow,
+  WEB_FLOW_COOKIE,
+  WEB_FLOW_COOKIE_MAX_AGE,
+} from "@/lib/meta/oauth-flow";
+import { getInstagramRedirectUri } from "@/lib/instagram-oauth";
 import { legalPage } from "@/lib/legal/page";
 
 export async function GET() {
@@ -21,8 +27,23 @@ export async function GET() {
     return legalPage("Instagram is unavailable", "<p>Connection is not configured on this server.</p>");
   }
 
-  const redirectUri = `${getBaseUrl()}/api/instagram/callback`;
-  const state = createOAuthState(context.workspaceId);
-
-  return NextResponse.redirect(getAuthorizationUrl(redirectUri, state));
+  const { state, flowId } = await startOAuthFlow({
+    client: "web",
+    userId: context.userId,
+    workspaceId: context.workspaceId,
+  });
+  const response = NextResponse.redirect(
+    getAuthorizationUrl(getInstagramRedirectUri(), state)
+  );
+  // Binds the flow to this browser: the callback rejects a state that comes
+  // back without the matching cookie (e.g. an authorize link sent to someone
+  // else).
+  response.cookies.set(WEB_FLOW_COOKIE, flowId, {
+    httpOnly: true,
+    secure: getBaseUrl().startsWith("https://"),
+    sameSite: "lax",
+    path: "/api/instagram/callback",
+    maxAge: WEB_FLOW_COOKIE_MAX_AGE,
+  });
+  return response;
 }
