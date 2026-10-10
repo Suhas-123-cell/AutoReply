@@ -184,11 +184,16 @@ export default function MembersScreen() {
           onPress: () =>
             changeRole.mutate({ memberId: member.id, role: "EDITOR" }),
         },
-        {
-          text: "Admin",
-          onPress: () =>
-            changeRole.mutate({ memberId: member.id, role: "ADMIN" }),
-        },
+        // Only the owner grants admin access (the server enforces this too).
+        ...(role === "OWNER"
+          ? [
+              {
+                text: "Admin",
+                onPress: () =>
+                  changeRole.mutate({ memberId: member.id, role: "ADMIN" }),
+              },
+            ]
+          : []),
         { text: "Cancel", style: "cancel" },
       ]
     );
@@ -235,7 +240,7 @@ export default function MembersScreen() {
                   ) : null}
                 </View>
                 <View className="flex-row items-center gap-3">
-                  {canManage && !isOwner ? (
+                  {canManage && !isOwner && (role === "OWNER" || member.role !== "ADMIN") ? (
                     <Pressable onPress={() => chooseRole(member)}>
                       <Text className="text-xs font-medium text-accent">
                         {member.role}
@@ -253,7 +258,7 @@ export default function MembersScreen() {
                       </Text>
                     </Pressable>
                   ) : null}
-                  {canManage && !isOwner && !isSelf ? (
+                  {canManage && !isOwner && !isSelf && (role === "OWNER" || member.role !== "ADMIN") ? (
                     <Pressable onPress={() => handleRemove(member)}>
                       <Text className="text-xs font-medium text-error">
                         Remove
@@ -331,7 +336,7 @@ export default function MembersScreen() {
               className="mb-3 rounded-lg border border-border bg-background px-3 py-2 text-foreground"
             />
             <View className="mb-3 flex-row gap-2">
-              {["MEMBER", "EDITOR", "ADMIN"].map((r) => (
+              {(role === "OWNER" ? ["MEMBER", "EDITOR", "ADMIN"] : ["MEMBER", "EDITOR"]).map((r) => (
                 <Pressable
                   key={r}
                   onPress={() => setInviteRole(r)}
