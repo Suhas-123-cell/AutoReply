@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
-import { getDMQueue } from "@/lib/queue/client";
+import { getDMQueue, getRedisConnection } from "@/lib/queue/client";
 import {
   parseCommentEvents,
   parseMessageEvents,
@@ -32,22 +32,27 @@ export async function POST(request: NextRequest) {
 
   if (!verifyWebhookSignature(rawBody, signature)) {
     // Record the attempt so a signature mismatch is visible rather than a
-    // silent 401. This is the common symptom of FACEBOOK_APP_SECRET being
-    // set to the wrong app's secret for the webhook's signing key.
-    await prisma.operationalEvent
-      .create({
-        data: {
-          source: "SYSTEM",
-          level: "WARNING",
-          message: "Webhook signature verification failed",
-          payload: {
-            hadSignatureHeader: Boolean(signature),
-            bodyLength: rawBody.length,
-            bodyPreview: rawBody.slice(0, 200),
+    // silent 401 — the common symptom of FACEBOOK_APP_SECRET being set to the
+    // wrong app's secret. This endpoint is public, so it records at most one
+    // event a minute and never stores the unauthenticated body.
+    const firstThisMinute = await getRedisConnection()
+      .set("webhook:bad-signature:logged", "1", "EX", 60, "NX")
+      .catch(() => null);
+    if (firstThisMinute === "OK") {
+      await prisma.operationalEvent
+        .create({
+          data: {
+            source: "SYSTEM",
+            level: "WARNING",
+            message: "Webhook signature verification failed",
+            payload: {
+              hadSignatureHeader: Boolean(signature),
+              bodyLength: rawBody.length,
+            },
           },
-        },
-      })
-      .catch(() => {});
+        })
+        .catch(() => {});
+    }
     return NextResponse.json(
       { success: false, error: "Invalid signature" },
       { status: 401 }
