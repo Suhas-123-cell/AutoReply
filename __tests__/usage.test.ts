@@ -68,7 +68,7 @@ describe("reserveWorkspaceDMSend", () => {
     expect(mockTx.workspace.updateMany).toHaveBeenNthCalledWith(2, {
       where: {
         id: "workspace_123",
-        usagePeriodStart: { gte: new Date(2026, 4, 1) },
+        usagePeriodStart: { gte: new Date("2026-05-01T00:00:00.000Z") },
         dmsSentThisPeriod: { lt: LIMIT },
       },
       data: { dmsSentThisPeriod: { increment: 1 } },

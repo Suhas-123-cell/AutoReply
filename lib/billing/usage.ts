@@ -41,8 +41,9 @@ export async function canConnectAnotherAccount(workspaceId: string): Promise<{
   return { allowed: connected < limit, connected, limit };
 }
 
-function getMonthStart(date = new Date()): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+// UTC so the usage period doesn't depend on the server's time zone.
+export function getMonthStart(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
 
 async function resetUsageIfNeededTx(

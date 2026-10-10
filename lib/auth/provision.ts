@@ -9,16 +9,23 @@
 
 import { prisma } from "@/lib/db/client";
 import { ensureWorkspaceForUser } from "@/lib/workspace";
+import { canonicalizeEmail, findUserByEmail } from "@/lib/auth/identity";
 import type { User, Workspace } from "@/app/generated/prisma/client";
 
 export async function provisionUserByEmail(
   email: string
 ): Promise<{ user: User; workspace: Workspace }> {
-  let user = await prisma.user.findUnique({ where: { email } });
+  // An alias of an existing mailbox (john.doe+2@gmail.com) signs in to the
+  // account that already owns it rather than creating a second free account.
+  let user = await findUserByEmail(email);
 
   if (!user) {
     user = await prisma.user.create({
-      data: { email, emailVerified: new Date() },
+      data: {
+        email,
+        canonicalEmail: canonicalizeEmail(email),
+        emailVerified: new Date(),
+      },
     });
   } else if (!user.emailVerified) {
     user = await prisma.user.update({
@@ -62,7 +69,7 @@ export async function provisionUserByGoogleAccount(input: {
     // Link to an existing email-matched user (e.g. they signed up via email
     // first) rather than creating a duplicate account for the same person.
     const existingByEmail = input.email
-      ? await prisma.user.findUnique({ where: { email: input.email } })
+      ? await findUserByEmail(input.email)
       : null;
 
     user =
@@ -70,6 +77,7 @@ export async function provisionUserByGoogleAccount(input: {
       (await prisma.user.create({
         data: {
           email: input.email,
+          canonicalEmail: input.email ? canonicalizeEmail(input.email) : null,
           name: input.name,
           emailVerified: input.email ? new Date() : null,
         },
@@ -110,11 +118,12 @@ export async function provisionUserByAppleAccount(input: {
     user = existingAccount.user;
   } else {
     const existingByEmail = input.email
-      ? await prisma.user.findUnique({ where: { email: input.email } })
+      ? await findUserByEmail(input.email)
       : null;
     user = existingByEmail ?? await prisma.user.create({
       data: {
         email: input.email,
+        canonicalEmail: input.email ? canonicalizeEmail(input.email) : null,
         name: input.name,
         emailVerified: input.email ? new Date() : null,
       },

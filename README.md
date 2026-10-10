@@ -40,6 +40,7 @@ AutoReply is built around Meta's official Instagram private replies and Telegram
 - Inbox. Read your Instagram DM conversations and reply from the app, inside Meta's 24-hour messaging window.
 - Activity log. Every send, skip, and failure is logged with a reason and filterable status.
 - Self-comment filtering. Your own comments never trigger a reply.
+- One person, one account. Every account needs a verified phone number (Firebase SMS), and each number belongs to one account. Signing in with an alias of an inbox you already use (`john.doe+2@gmail.com`) opens your existing account, and deleting an account doesn't reset that phone's or email's free allowance for the month. Campaigns only send for workspaces whose owner has verified a phone.
 - Optional billing. Self-hosted deployments have no plan cap. Hosted deployments can enable Free (500 messages, one account), Starter (25,000 messages, two accounts), and Agency (250,000 messages, ten accounts). Store builds keep external checkout disabled until their native billing path or applicable program is approved.
 
 ## How it works
