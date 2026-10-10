@@ -114,12 +114,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json();
-  const parsed = inviteSchema.safeParse(body);
+  const parsed = inviteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { success: false, error: "Invalid invitation", details: parsed.error.flatten() },
       { status: 400 }
+    );
+  }
+
+  // Admins can add editors and members; only the owner can create admins.
+  if (parsed.data.role === "ADMIN" && context.role !== "OWNER") {
+    return NextResponse.json(
+      { success: false, error: "Only the workspace owner can invite admins" },
+      { status: 403 }
     );
   }
 
@@ -169,7 +176,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const parsed = updateMemberSchema.safeParse(await request.json());
+  const parsed = updateMemberSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { success: false, error: "Invalid member update" },
@@ -186,10 +193,27 @@ export async function PATCH(request: NextRequest) {
       { status: 400 }
     );
   }
+  // Admins are peers: only the owner can promote to, or change, an admin.
+  if (
+    context.role !== "OWNER" &&
+    (member.role === "ADMIN" || parsed.data.role === "ADMIN")
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Only the workspace owner can change admin roles" },
+      { status: 403 }
+    );
+  }
 
   await prisma.workspaceMember.update({
     where: { id: member.id },
-    data: { role: parsed.data.role, ...(parsed.data.role === "EDITOR" && member.role === "ADMIN" ? { accountAccessRestricted: true } : {}) },
+    // A demoted admin starts with no account access until a manager grants
+    // specific accounts, rather than silently keeping all of them.
+    data: {
+      role: parsed.data.role,
+      ...(member.role === "ADMIN" && parsed.data.role !== "ADMIN"
+        ? { accountAccessRestricted: true }
+        : {}),
+    },
   });
 
   return NextResponse.json({
@@ -229,6 +253,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Member cannot be removed" },
         { status: 400 }
+      );
+    }
+    if (member.role === "ADMIN" && context.role !== "OWNER") {
+      return NextResponse.json(
+        { success: false, error: "Only the workspace owner can remove admins" },
+        { status: 403 }
       );
     }
 
