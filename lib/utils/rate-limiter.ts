@@ -23,7 +23,7 @@
  * this is ever reached, is what actually bounds how long a job keeps trying.
  */
 
-import Redis from "ioredis";
+import { getRedisConnection } from "@/lib/queue/client";
 
 const RATE_LIMIT_MAX = 750; // private replies per hour, per Meta's documented cap
 const RATE_LIMIT_WINDOW = 3600; // 1 hour in seconds
@@ -48,15 +48,9 @@ const BURST_REQUEUE_DELAY_MS = 1500;
 // well before then.
 const MAX_BURST_REQUEUE_ATTEMPTS = 40;
 
-let redis: Redis | null = null;
-
-function getRedis(): Redis {
-  if (!redis) {
-    redis = new Redis(process.env.REDIS_URL!, {
-      maxRetriesPerRequest: null, // required by BullMQ
-    });
-  }
-  return redis;
+// Shares the queue's Redis connection rather than opening a second client.
+function getRedis() {
+  return getRedisConnection();
 }
 
 export interface RateLimitResult {
