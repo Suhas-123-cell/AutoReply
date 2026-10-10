@@ -44,6 +44,10 @@ const LOOKBACK_HOURS = Number(process.env.COMMENT_POLL_LOOKBACK_HOURS ?? 72);
 const MAX_NEW_PER_SWEEP = Number(process.env.COMMENT_POLL_MAX_PER_SWEEP ?? 30);
 // For "any post" campaigns, how many recent posts to scan.
 const RECENT_MEDIA_LIMIT = 10;
+// A comment whose DM has failed this many times in total (three attempts per
+// job) is left alone: permanent Meta errors would otherwise be retried, and
+// alerted on, every sweep for the whole lookback window.
+const MAX_TOTAL_SEND_ATTEMPTS = 6;
 
 interface SweepStat {
   campaign: string;
@@ -63,7 +67,11 @@ function errMessage(error: unknown): string {
 /** One reconciliation pass across every active campaign. */
 export async function reconcileComments(): Promise<void> {
   const automations = await prisma.automation.findMany({
-    where: { isActive: true },
+    // Same gate as the worker: no sending for an owner without a verified phone.
+    where: {
+      isActive: true,
+      workspace: { owner: { phone: { not: null }, phoneVerified: { not: null } } },
+    },
     select: {
       id: true,
       name: true,
@@ -87,9 +95,11 @@ export async function reconcileComments(): Promise<void> {
 
   const sinceMs = Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000;
   const tokenCache = new Map<string, string | null>();
+  // Several "any post" campaigns on one account share one media lookup.
+  const mediaCache = new Map<string, Promise<string[]>>();
 
   for (const automation of automations) {
-    const stat = await sweepCampaign(automation, sinceMs, tokenCache).catch(
+    const stat = await sweepCampaign(automation, sinceMs, tokenCache, mediaCache).catch(
       (error): SweepStat => ({
         campaign: automation.name,
         keywords: automation.keywords.join(","),
@@ -121,7 +131,8 @@ async function sweepCampaign(
     };
   },
   sinceMs: number,
-  tokenCache: Map<string, string | null>
+  tokenCache: Map<string, string | null>,
+  mediaCache: Map<string, Promise<string[]>>
 ): Promise<SweepStat> {
   const account = automation.instagramAccount;
   const stat: SweepStat = {
@@ -157,8 +168,14 @@ async function sweepCampaign(
     mediaIds.push(automation.postId);
   } else if (automation.matchAnyPost) {
     try {
-      const media = await getUserMedia(accessToken, RECENT_MEDIA_LIMIT);
-      mediaIds.push(...media.map((m) => m.id));
+      let media = mediaCache.get(account.id);
+      if (!media) {
+        media = getUserMedia(accessToken, RECENT_MEDIA_LIMIT).then((items) =>
+          items.map((m) => m.id)
+        );
+        mediaCache.set(account.id, media);
+      }
+      mediaIds.push(...(await media));
     } catch (error) {
       stat.errors.push(`Media list: ${errMessage(error)}`);
     }
@@ -197,12 +214,18 @@ async function sweepCampaign(
         automationId: automation.id,
         commentId: { in: candidates.map((c) => c.id) },
       },
-      select: { commentId: true, status: true, publicReplySentAt: true },
+      select: { commentId: true, status: true, attempts: true, publicReplySentAt: true },
     });
     const logByComment = new Map(knownLogs.map((log) => [log.commentId, log]));
     const ownerReplyObserved: string[] = [];
     const needsAction = candidates.filter((comment) => {
       const log = logByComment.get(comment.id);
+      // The worker never sends past the plan cap, and a DM that keeps failing
+      // has had its retries; re-queueing either only repeats the outcome.
+      if (log?.status === "SKIPPED_PLAN_LIMIT") return false;
+      if (log?.status === "FAILED" && log.attempts >= MAX_TOTAL_SEND_ATTEMPTS) {
+        return false;
+      }
       const ownerReplied = (comment.replies?.data ?? []).some(
         (reply) => reply.from?.id === account.instagramId
       );
