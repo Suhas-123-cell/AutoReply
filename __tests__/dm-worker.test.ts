@@ -15,6 +15,7 @@ const {
   mockQueueAdd,
   mockReserveWorkspaceDMSend,
   mockReleaseWorkspaceDMReservation,
+  mockEnqueuePush,
 } = vi.hoisted(() => ({
   mockPrisma: {
     automation: {
@@ -48,7 +49,10 @@ const {
   mockQueueAdd: vi.fn(),
   mockReserveWorkspaceDMSend: vi.fn(),
   mockReleaseWorkspaceDMReservation: vi.fn(),
+  mockEnqueuePush: vi.fn(),
 }));
+
+vi.mock("@/lib/push/notify", () => ({ enqueuePush: mockEnqueuePush }));
 
 vi.mock("@/lib/db/client", () => ({
   prisma: mockPrisma,
@@ -288,6 +292,7 @@ beforeEach(() => {
     message_id: "msg_006",
   });
   mockGetUserFollowStatus.mockResolvedValue(true);
+  mockEnqueuePush.mockResolvedValue(undefined);
 });
 
 describe("DM Worker — Full Pipeline", () => {
@@ -301,6 +306,10 @@ describe("DM Worker — Full Pipeline", () => {
         OR: [{ postId: "media_101" }, { matchAnyPost: true }],
         isActive: true,
         instagramAccount: { instagramId: "ig_456" },
+        // Nothing sends for a workspace whose owner has no verified phone.
+        workspace: {
+          owner: { phone: { not: null }, phoneVerified: { not: null } },
+        },
       },
       include: {
         instagramAccount: true,
@@ -1024,5 +1033,127 @@ describe("processPostback strictfollowcheck", () => {
     );
     expect(mockSendDirectMessageWithButton).not.toHaveBeenCalled();
     expect(mockSendDirectMessage).toHaveBeenCalled();
+  });
+});
+
+describe("abuse and retry safeguards", () => {
+  beforeEach(() => {
+    mockPrisma.dmLog.update.mockResolvedValue({ id: "log_1" });
+    mockPrisma.dmLog.upsert.mockImplementation(async ({ create }) => ({
+      id: "log_2",
+      ...create,
+    }));
+  });
+
+  it("counts attempts cumulatively and alerts only when retries are exhausted", async () => {
+    mockPrisma.dmLog.findUnique.mockResolvedValue({ status: "FAILED" });
+    mockSendPrivateReply.mockRejectedValue(new Error("network timeout"));
+    const processor = getProcessor();
+
+    const job = { ...createMockJob(), opts: { attempts: 3 } };
+    await expect(processor(job)).rejects.toThrow("network timeout");
+    expect(mockPrisma.dmLog.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "PENDING", attempts: { increment: 1 } }),
+      })
+    );
+    expect(mockEnqueuePush).not.toHaveBeenCalled();
+
+    await expect(processor({ ...job, attemptsMade: 2 })).rejects.toThrow("network timeout");
+    expect(mockEnqueuePush).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "send_failure" })
+    );
+  });
+
+  it("doesn't resend the link when the same person taps the button again", async () => {
+    mockPrisma.automation.findFirst.mockResolvedValue(mockAutomation);
+    mockPrisma.dmLog.findFirst.mockResolvedValue({ id: "earlier_reveal" });
+
+    await getProcessor()(
+      createMockPostbackJob({
+        instagramAccountId: "ig_456",
+        userId: "commenter_999",
+        payload: "reveal:auto_789",
+        mid: "second_tap",
+      })
+    );
+
+    expect(mockPrisma.automation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          workspace: { owner: { phone: { not: null }, phoneVerified: { not: null } } },
+        }),
+      })
+    );
+    expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits DM-triggered replies like comment replies", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([
+      { ...mockAutomation, postId: null, dmTriggerEnabled: true, requireFollow: false },
+    ]);
+    mockPrisma.dmLog.findFirst.mockResolvedValue(null);
+    mockReserveDMSlot.mockResolvedValue({
+      allowed: false,
+      currentCount: 2,
+      remainingDMs: 0,
+      shouldRequeue: true,
+      requeueDelayMs: 1500,
+      shouldSkip: false,
+      reserved: false,
+      blockedBy: "burst",
+    });
+
+    await getProcessor()({
+      name: "process-message",
+      data: {
+        instagramAccountId: "ig_456",
+        messageId: "mid_9",
+        messageText: "LINK",
+        senderId: "fan_1",
+      },
+      id: "message_ig_456_bWlkXzk",
+      attemptsMade: 0,
+    });
+
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockReleaseWorkspaceDMReservation).toHaveBeenCalledWith(
+      "workspace_123",
+      usagePeriodStart
+    );
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "process-message",
+      expect.objectContaining({ burstRequeueAttempt: 1, requeueAttempt: 0 }),
+      { delay: 1500, jobId: "message_ig_456_bWlkXzk_rl_0_1" }
+    );
+  });
+
+  it("replies to an any-word DM trigger at most once a day per person", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([
+      {
+        ...mockAutomation,
+        postId: null,
+        dmTriggerEnabled: true,
+        matchAnyWord: true,
+        requireFollow: false,
+      },
+    ]);
+    mockPrisma.dmLog.findFirst.mockResolvedValue({ id: "replied_this_morning" });
+
+    await getProcessor()({
+      name: "process-message",
+      data: {
+        instagramAccountId: "ig_456",
+        messageId: "mid_10",
+        messageText: "hey how are you",
+        senderId: "fan_1",
+      },
+      id: "message_job_10",
+      attemptsMade: 0,
+    });
+
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+    expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
   });
 });

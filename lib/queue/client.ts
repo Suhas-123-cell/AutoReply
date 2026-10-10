@@ -47,6 +47,9 @@ export interface ProcessPostbackJob {
   mid?: string;
   fallback?: boolean;
   interactionTimestamp?: number;
+  // Rate-limit requeue counters, as on ProcessCommentJob.
+  requeueAttempt?: number;
+  burstRequeueAttempt?: number;
 }
 
 // An inbound DM or Story reply. Campaigns with `dmTriggerEnabled` whose
@@ -58,6 +61,8 @@ export interface ProcessMessageJob {
   senderId: string;
   isStoryReply?: boolean;
   interactionTimestamp?: number;
+  requeueAttempt?: number;
+  burstRequeueAttempt?: number;
 }
 
 export type DmQueueJob =
