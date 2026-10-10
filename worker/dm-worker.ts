@@ -1,6 +1,4 @@
-// Loads .env when run outside a container; a no-op on Northflank, where env
-// vars are injected and .env is excluded by .dockerignore.
-import "dotenv/config";
+import "./load-env";
 import { createDMWorker } from "@/lib/queue/dm-worker";
 import { createPushWorker } from "@/lib/queue/push-worker";
 import { recordWorkerHeartbeat } from "@/lib/ops/worker-health";
