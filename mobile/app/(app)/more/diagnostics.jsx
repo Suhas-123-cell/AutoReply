@@ -108,9 +108,7 @@ export default function DiagnosticsScreen() {
         </View>
         {workerHealth?.heartbeat ? (
           <Text className="mt-1 text-xs text-muted">
-            PID {workerHealth.heartbeat.pid}
-            {workerHealth.heartbeat.hostname ? ` on ${workerHealth.heartbeat.hostname}` : ""} · last
-            seen {formatDate(workerHealth.heartbeat.checkedAt)}
+            Last seen {formatDate(workerHealth.heartbeat.checkedAt)}
           </Text>
         ) : (
           <Text className="mt-1 text-xs text-muted">No heartbeat recorded.</Text>

@@ -24,6 +24,14 @@ export async function GET() {
     );
   }
   const workspaceId = context.workspaceId;
+  const instagramIds = new Set(
+    (
+      await prisma.instagramAccount.findMany({
+        where: { workspaceId },
+        select: { instagramId: true },
+      })
+    ).map((account) => account.instagramId)
+  );
 
   const [
     queueCounts,
@@ -36,7 +44,9 @@ export async function GET() {
   ] = await Promise.all([
     getDMQueue().getJobCounts("waiting", "active", "delayed", "failed"),
     getWorkerHealth(),
-    getWorkerAlerts(10),
+    // Alerts are recorded process-wide; fetch the full ring buffer and keep
+    // only this workspace's accounts.
+    getWorkerAlerts(25),
     prisma.webhookEvent.findMany({
       where: { workspaceId, status: "FAILED" },
       orderBy: { createdAt: "desc" },
@@ -86,7 +96,9 @@ export async function GET() {
     }),
     prisma.operationalEvent.findMany({
       where: {
-        OR: [{ workspaceId }, { workspaceId: null }],
+        // Events without a workspace are platform-wide (other tenants' worker
+        // errors, unauthenticated webhook attempts) and never shown here.
+        workspaceId,
       },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -104,9 +116,25 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     data: {
+      // Aggregate counts only — no tenant data.
       queueCounts,
-      workerHealth,
-      workerAlerts,
+      // The heartbeat's pid and hostname describe shared infrastructure.
+      workerHealth: {
+        healthy: workerHealth.healthy,
+        ageMs: workerHealth.ageMs,
+        heartbeat: workerHealth.heartbeat
+          ? {
+              checkedAt: workerHealth.heartbeat.checkedAt,
+              startedAt: workerHealth.heartbeat.startedAt,
+            }
+          : null,
+      },
+      workerAlerts: workerAlerts
+        .filter(
+          (alert) =>
+            alert.instagramAccountId && instagramIds.has(alert.instagramAccountId)
+        )
+        .slice(0, 10),
       webhookFailures,
       dmFailures,
       tokenRefreshFailures,
