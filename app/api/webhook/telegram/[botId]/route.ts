@@ -8,6 +8,12 @@ import {
   type TelegramUpdate,
 } from "@/lib/telegram/client";
 import { matchKeywords } from "@/lib/utils/keyword-matcher";
+import { getRedisConnection } from "@/lib/queue/client";
+import {
+  releaseWorkspaceDMReservation,
+  reserveWorkspaceDMSend,
+} from "@/lib/billing/usage";
+import { hasVerifiedPhone } from "@/lib/auth/phone-verification";
 
 type RouteProps = { params: Promise<{ botId: string }> };
 
@@ -22,6 +28,9 @@ export async function POST(request: NextRequest, { params }: RouteProps) {
 
   const account = await prisma.telegramAccount.findUnique({
     where: { botId },
+    include: {
+      workspace: { select: { owner: { select: { phone: true, phoneVerified: true } } } },
+    },
   });
   if (!account) {
     return NextResponse.json({ success: false }, { status: 404 });
@@ -52,6 +61,21 @@ export async function POST(request: NextRequest, { params }: RouteProps) {
     return NextResponse.json({ success: true });
   }
 
+  // Same rule as Instagram: a workspace sends nothing until its owner has a
+  // verified phone number.
+  if (!hasVerifiedPhone(account.workspace.owner)) {
+    return NextResponse.json({ success: true });
+  }
+
+  // Telegram redelivers an update it didn't see acknowledged in time; reply
+  // to each update_id once.
+  const firstDelivery = await getRedisConnection()
+    .set(`tg:update:${botId}:${update.update_id}`, "1", "EX", 24 * 60 * 60, "NX")
+    .catch(() => "OK");
+  if (firstDelivery !== "OK") {
+    return NextResponse.json({ success: true });
+  }
+
   const chatId = String(message.chat.id);
   const senderUsername = message.from?.username ?? null;
   const messageText = message.text;
@@ -76,19 +100,28 @@ export async function POST(request: NextRequest, { params }: RouteProps) {
     }
   }
 
+  // Messages that trigger nothing aren't stored: they're private
+  // conversations with the bot, not campaign activity.
   if (!matchedAutomation) {
-    await prisma.telegramMessageLog
-      .create({
-        data: {
-          workspaceId: account.workspaceId,
-          telegramAccountId: account.id,
-          chatId,
-          senderUsername,
-          messageText,
-          status: "SKIPPED_NO_MATCH",
-        },
-      })
-      .catch(() => {});
+    return NextResponse.json({ success: true });
+  }
+
+  // Telegram replies draw from the same monthly allowance as Instagram DMs.
+  const usage = await reserveWorkspaceDMSend(account.workspaceId);
+  if (!usage.allowed) {
+    await prisma.telegramMessageLog.create({
+      data: {
+        workspaceId: account.workspaceId,
+        telegramAccountId: account.id,
+        automationId: matchedAutomation.id,
+        chatId,
+        senderUsername,
+        messageText,
+        matchedKeyword,
+        status: "SKIPPED_PLAN_LIMIT",
+        errorMessage: `Monthly DM limit reached (${usage.limit})`,
+      },
+    });
     return NextResponse.json({ success: true });
   }
 
@@ -113,6 +146,7 @@ export async function POST(request: NextRequest, { params }: RouteProps) {
       data: { status: "SENT", sentAt: new Date(), attempts: 1 },
     });
   } catch (err) {
+    await releaseWorkspaceDMReservation(account.workspaceId, usage.periodStart);
     const message =
       err instanceof TelegramApiError ? err.message : "Failed to send reply";
     await prisma.telegramMessageLog.update({
