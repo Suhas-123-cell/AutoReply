@@ -64,6 +64,17 @@ export function getPlan(planId: string): PlanDefinition {
 
 const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 
+// Subscription statuses that can still bill or recover. Anything else
+// (canceled, incomplete_expired, or never subscribed) is finished, so a new
+// checkout may start and its subscription replaces the old one.
+export const LIVE_SUBSCRIPTION_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "incomplete",
+]);
+
 export function getEffectivePlanId(planId: string, planStatus: string | null): PlanId {
   if (planId === "free") return "free";
   return isPlanId(planId) && ENTITLED_STATUSES.has(planStatus ?? "")

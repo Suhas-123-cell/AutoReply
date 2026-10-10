@@ -6,7 +6,7 @@ import { canManageBilling, getCurrentWorkspaceContext } from "@/lib/workspace-ac
 import { getPlan, isBillingConfigured, isPlanId, PAID_PLAN_IDS } from "@/lib/billing/plans";
 import { getStripeClient, getStripePriceId } from "@/lib/billing/stripe";
 import { getBaseUrl } from "@/lib/env";
-import { isMobileCheckoutEnabled } from "@/lib/billing/plans";
+import { isMobileCheckoutEnabled, LIVE_SUBSCRIPTION_STATUSES } from "@/lib/billing/plans";
 
 const checkoutSchema = z.object({
   plan: z.enum(["starter", "agency"]),
@@ -69,9 +69,7 @@ export async function POST(request: NextRequest) {
   const stripe = getStripeClient();
   if (
     context.workspace.stripeSubscriptionId &&
-    ["active", "trialing", "past_due", "unpaid", "incomplete"].includes(
-      context.workspace.planStatus ?? ""
-    )
+    LIVE_SUBSCRIPTION_STATUSES.has(context.workspace.planStatus ?? "")
   ) {
     return NextResponse.json(
       { success: false, error: "Manage the existing subscription instead of starting another." },

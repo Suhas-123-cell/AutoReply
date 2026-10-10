@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/db/client";
-import type { PlanId } from "@/lib/billing/plans";
+import { LIVE_SUBSCRIPTION_STATUSES, type PlanId } from "@/lib/billing/plans";
 import { getStripeClient } from "@/lib/billing/stripe";
 
 // Reverse lookup: a Checkout/Portal session only gives us a Stripe Price ID,
@@ -33,7 +33,7 @@ async function applySubscription(subscription: Stripe.Subscription) {
 
   const workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
-    select: { stripeCustomerId: true, stripeSubscriptionId: true },
+    select: { stripeCustomerId: true, stripeSubscriptionId: true, planStatus: true },
   });
   if (!workspace) return;
   const customerId =
@@ -44,9 +44,13 @@ async function applySubscription(subscription: Stripe.Subscription) {
     console.warn("[Stripe Webhook] Customer/workspace mismatch:", subscription.id);
     return;
   }
+  // A different subscription only replaces the stored one once that one has
+  // ended — checkout allows a new purchase exactly then, so its events must
+  // not be dropped as stale while the old id lingers.
   if (
     workspace.stripeSubscriptionId &&
-    workspace.stripeSubscriptionId !== subscription.id
+    workspace.stripeSubscriptionId !== subscription.id &&
+    LIVE_SUBSCRIPTION_STATUSES.has(workspace.planStatus ?? "")
   ) {
     console.warn("[Stripe Webhook] Ignoring stale subscription event:", subscription.id);
     return;
