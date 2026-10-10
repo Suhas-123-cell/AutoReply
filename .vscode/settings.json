@@ -1,0 +1,8 @@
+{
+  // React Native builds Android through Gradle (npx react-native run-android
+  // or Android Studio). The Java extension would otherwise import the RN
+  // Gradle plugin from node_modules as Java projects and report false errors.
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled"
+}
