@@ -187,20 +187,23 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" },
   });
 
+  // Aggregate only the campaigns being returned (indexed on automationId),
+  // not the workspace's entire history.
+  const automationIds = automations.map((automation) => automation.id);
   const [statusCounts, clickCounts, keywordCounts] = await Promise.all([
     prisma.dmLog.groupBy({
       by: ["automationId", "status", "messageStage"],
-      where: { workspaceId },
+      where: { automationId: { in: automationIds } },
       _count: { _all: true },
     }),
     prisma.linkClick.groupBy({
       by: ["automationId"],
-      where: { workspaceId },
+      where: { automationId: { in: automationIds } },
       _count: { _all: true },
     }),
     prisma.dmLog.groupBy({
       by: ["automationId", "matchedKeyword"],
-      where: { workspaceId, matchedKeyword: { not: null } },
+      where: { automationId: { in: automationIds }, matchedKeyword: { not: null } },
       _count: { _all: true },
     }),
   ]);
@@ -308,8 +311,9 @@ export async function POST(request: NextRequest) {
   const { instagramAccountIds: allowedAccountIds } =
     await getAccountAccessScope(context);
 
-  const body = await request.json();
-  const parsed = createAutomationSchema.safeParse(body);
+  const parsed = createAutomationSchema.safeParse(
+    await request.json().catch(() => null)
+  );
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -500,8 +504,9 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const body = await request.json();
-  const parsed = updateAutomationSchema.safeParse(body);
+  const parsed = updateAutomationSchema.safeParse(
+    await request.json().catch(() => null)
+  );
 
   if (!parsed.success) {
     return NextResponse.json(
