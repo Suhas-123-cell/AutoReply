@@ -7,8 +7,17 @@ Open-source Instagram + Telegram comment-to-DM automation with a native mobile o
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Built with Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org)
 [![React Native](https://img.shields.io/badge/React_Native-0.81-black.svg)](https://reactnative.dev)
+[![CI](https://github.com/Suhas-123-cell/AutoReply/actions/workflows/ci.yml/badge.svg)](https://github.com/Suhas-123-cell/AutoReply/actions/workflows/ci.yml)
 
 </div>
+
+**What:** self-hostable comment-to-DM automation. A keyword in an Instagram comment, DM or Story reply (or a Telegram bot message) triggers a private reply through the official Meta or Telegram API, managed from an iOS/Android app.<br>
+**Built on:** a fork of [instagram-comment-to-dm](https://github.com/im-anishraj/instagram-comment-to-dm), rebuilt around a React Native operator app, with Telegram support, per-account permissions and campaign cloning added.<br>
+**Stack:** Next.js 16 · React Native 0.81 · Prisma 7 + PostgreSQL · BullMQ + Redis · Instagram API · Telegram Bot API. CI runs typecheck, lint, Vitest and the production build for the backend, plus lint and Jest for the mobile app.
+
+<!-- Screenshot placeholder: add docs/screenshot.png (the mobile campaign screen), then uncomment the next line.
+![AutoReply mobile app](docs/screenshot.png)
+-->
 
 Someone comments `LINK` on your reel, and they get a DM with your link a second later. AutoReply watches the comments on your Instagram posts (and, separately, messages sent to your Telegram bot), and when a comment or message matches a keyword you set, it sends a private reply through the official Meta API or the Telegram Bot API. You can also post a public reply under the Instagram comment at the same time.
 
